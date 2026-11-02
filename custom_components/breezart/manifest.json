@@ -1,0 +1,16 @@
+{
+  "domain": "breezart",
+  "name": "Breezart",
+  "version": "1.0.0",
+  "config_flow": true,
+  "documentation": "https://github.com/akmagcry-oss/breezart-ha",
+  "issue_tracker": "https://github.com/akmagcry-oss/breezart-ha/issues",
+  "codeowners": [
+    "@akmagcry-oss"
+  ],
+  "requirements": [],
+  "iot_class": "local_polling",
+  "loggers": [
+    "custom_components.breezart"
+  ]
+}

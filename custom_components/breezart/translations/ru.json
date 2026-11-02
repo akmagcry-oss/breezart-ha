@@ -1,0 +1,270 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Вентиляция Breezart",
+        "description": "Настройка подключения и выбор модели установки Breezart",
+        "data": {
+          "model": "Модель установки (преднастройка)",
+          "host": "Хост (IP-адрес)",
+          "port": "TCP-порт",
+          "password": "Пароль удалённого доступа"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к контроллеру Breezart",
+      "invalid_auth": "Неверный пароль удалённого доступа",
+      "unknown": "Неожиданная ошибка при подключении"
+    },
+    "abort": {
+      "already_configured": "Устройство Breezart уже настроено"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Модель и параметры Breezart",
+        "description": "Выберите модель установки для автоматической настройки скоростей, охлаждения и сенсоров",
+        "data": {
+          "model": "Модель установки (преднастройка)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "400_lux": "Breezart 400 Lux (Электрический, до 400 м³/ч)",
+        "550_lux": "Breezart 550 Lux (Электрический, до 550 м³/ч)",
+        "550_aqua": "Breezart 550 Aqua (Водяной + увлажнитель, до 550 м³/ч)",
+        "700_lux": "Breezart 700 Lux (Электрический + охлаждение, до 700 м³/ч)",
+        "1000_lux": "Breezart 1000 Lux (Электрический, 10 скоростей, до 1000 м³/ч)",
+        "1000_aqua": "Breezart 1000 Aqua (Водяной + увлажнитель, до 1000 м³/ч)",
+        "2000_lux": "Breezart 2000 Lux (Промышленный, до 2000 м³/ч)",
+        "custom": "Пользовательский / Автоопределение (VPr07)"
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "climate": {
+        "name": "Климат"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Питание"
+      }
+    },
+    "number": {
+      "target_temperature": {
+        "name": "Заданная температура"
+      },
+      "fan_speed": {
+        "name": "Скорость вентилятора"
+      }
+    },
+    "binary_sensor": {
+      "is_warn_err": {
+        "name": "Предупреждение"
+      },
+      "is_fatal_err": {
+        "name": "Критическая ошибка"
+      },
+      "danger_overheat": {
+        "name": "Угроза перегрева"
+      },
+      "change_filter": {
+        "name": "Требуется замена фильтра"
+      },
+      "power": {
+        "name": "Установка включена"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Температура (точка регулирования)"
+      },
+      "temp_supply": {
+        "name": "Температура подачи (выход установки)"
+      },
+      "temp_room": {
+        "name": "Температура в помещении"
+      },
+      "temp_outdoor": {
+        "name": "Температура на улице"
+      },
+      "temp_water": {
+        "name": "Температура теплоносителя"
+      },
+      "temperature_target": {
+        "name": "Заданная температура"
+      },
+      "speed": {
+        "name": "Скорость вентилятора"
+      },
+      "speed_target": {
+        "name": "Заданная скорость"
+      },
+      "speed_fact": {
+        "name": "Фактическая скорость"
+      },
+      "power_consumption": {
+        "name": "Потребляемая мощность"
+      },
+      "filter_dust": {
+        "name": "Загрязнённость фильтра"
+      },
+      "humidity": {
+        "name": "Влажность"
+      },
+      "unit_state": {
+        "name": "Состояние установки",
+        "state": {
+          "off": "Выключено",
+          "on": "Включено",
+          "turning_off": "Выключение",
+          "turning_on": "Включение",
+          "unknown": "Неизвестно"
+        }
+      },
+      "mode": {
+        "name": "Режим работы",
+        "state": {
+          "heat": "Обогрев",
+          "cool": "Охлаждение",
+          "auto_heat": "Авто-Обогрев",
+          "auto_cool": "Авто-Охлаждение",
+          "fan_only": "Вентиляция",
+          "off": "Выключено",
+          "unknown": "Неизвестно"
+        }
+      },
+      "mode_set": {
+        "name": "Заданный режим",
+        "state": {
+          "heat": "Обогрев",
+          "cool": "Охлаждение",
+          "auto": "Авто",
+          "fan_only": "Вентиляция",
+          "unknown": "Неизвестно"
+        }
+      },
+      "color_ind": {
+        "name": "Индикатор питания",
+        "state": {
+          "off": "Выключено",
+          "transition": "Переходный процесс",
+          "on": "Включено",
+          "unknown": "Неизвестно"
+        }
+      },
+      "color_msg": {
+        "name": "Статус сообщения",
+        "state": {
+          "normal": "Норма",
+          "warning": "Предупреждение",
+          "error": "Ошибка",
+          "unknown": "Неизвестно"
+        }
+      },
+      "msg": {
+        "name": "Сообщение устройства"
+      },
+      "firmware_ver": {
+        "name": "Версия прошивки"
+      },
+      "protocol_ver": {
+        "name": "Версия протокола"
+      },
+      "humidity_supply": {
+        "name": "Влажность на притоке"
+      },
+      "humidity_room": {
+        "name": "Влажность в помещении"
+      },
+      "humidity_outdoor": {
+        "name": "Влажность уличного воздуха"
+      },
+      "co2": {
+        "name": "CO₂"
+      },
+      "voc": {
+        "name": "VOC (загрязнённость воздуха)"
+      },
+      "filter1_pollution": {
+        "name": "Фильтр 1",
+        "state_attributes": {
+          "status": {
+            "name": "Статус"
+          },
+          "status_key": {
+            "name": "Ключ статуса",
+            "state": {
+              "no_data": "Нет данных",
+              "excellent": "Отличное",
+              "good": "Хорошее",
+              "replace_soon": "Требуется замена",
+              "clogged": "Забит"
+            }
+          }
+        }
+      },
+      "filter2_pollution": {
+        "name": "Фильтр 2",
+        "state_attributes": {
+          "status": {
+            "name": "Статус"
+          },
+          "status_key": {
+            "name": "Ключ статуса",
+            "state": {
+              "no_data": "Нет данных",
+              "excellent": "Отличное",
+              "good": "Хорошее",
+              "replace_soon": "Требуется замена",
+              "clogged": "Забит"
+            }
+          }
+        }
+      },
+      "filter3_pollution": {
+        "name": "Фильтр 3",
+        "state_attributes": {
+          "status": {
+            "name": "Статус"
+          },
+          "status_key": {
+            "name": "Ключ статуса",
+            "state": {
+              "no_data": "Нет данных",
+              "excellent": "Отличное",
+              "good": "Хорошее",
+              "replace_soon": "Требуется замена",
+              "clogged": "Забит"
+            }
+          }
+        }
+      },
+      "filter4_pollution": {
+        "name": "Фильтр 4",
+        "state_attributes": {
+          "status": {
+            "name": "Статус"
+          },
+          "status_key": {
+            "name": "Ключ статуса",
+            "state": {
+              "no_data": "Нет данных",
+              "excellent": "Отличное",
+              "good": "Хорошее",
+              "replace_soon": "Требуется замена",
+              "clogged": "Забит"
+            }
+          }
+        }
+      }
+    }
+  }
+}

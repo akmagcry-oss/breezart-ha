@@ -1,0 +1,270 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Breezart Ventilation",
+        "description": "Configure connection and model preset for your Breezart controller",
+        "data": {
+          "model": "Unit Model Preset",
+          "host": "Host (IP address)",
+          "port": "TCP Port",
+          "password": "Remote Access Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Breezart controller",
+      "invalid_auth": "Invalid remote access password",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This Breezart device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Breezart Model & Options",
+        "description": "Select the Breezart model preset to adjust speed ranges, cooling support, and default sensors",
+        "data": {
+          "model": "Unit Model Preset"
+        }
+      }
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "400_lux": "Breezart 400 Lux (Electric, up to 400 m³/h)",
+        "550_lux": "Breezart 550 Lux (Electric, up to 550 m³/h)",
+        "550_aqua": "Breezart 550 Aqua (Water heater + humidifier, up to 550 m³/h)",
+        "700_lux": "Breezart 700 Lux (Electric + cooling, up to 700 m³/h)",
+        "1000_lux": "Breezart 1000 Lux (Electric, 10 speeds, up to 1000 m³/h)",
+        "1000_aqua": "Breezart 1000 Aqua (Water heater + humidifier, up to 1000 m³/h)",
+        "2000_lux": "Breezart 2000 Lux (Commercial, up to 2000 m³/h)",
+        "custom": "Custom / Auto-detect (VPr07)"
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "climate": {
+        "name": "Climate"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Power"
+      }
+    },
+    "number": {
+      "target_temperature": {
+        "name": "Target temperature"
+      },
+      "fan_speed": {
+        "name": "Fan speed"
+      }
+    },
+    "binary_sensor": {
+      "is_warn_err": {
+        "name": "Warning"
+      },
+      "is_fatal_err": {
+        "name": "Fatal error"
+      },
+      "danger_overheat": {
+        "name": "Overheat hazard"
+      },
+      "change_filter": {
+        "name": "Filter replacement required"
+      },
+      "power": {
+        "name": "Unit running"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperature (control point)"
+      },
+      "temp_supply": {
+        "name": "Supply air temperature"
+      },
+      "temp_room": {
+        "name": "Room temperature"
+      },
+      "temp_outdoor": {
+        "name": "Outdoor air temperature"
+      },
+      "temp_water": {
+        "name": "Heat carrier (water) temperature"
+      },
+      "temperature_target": {
+        "name": "Target temperature"
+      },
+      "speed": {
+        "name": "Fan speed"
+      },
+      "speed_target": {
+        "name": "Target fan speed"
+      },
+      "speed_fact": {
+        "name": "Actual fan speed"
+      },
+      "power_consumption": {
+        "name": "Power consumption"
+      },
+      "filter_dust": {
+        "name": "Filter pollution"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "unit_state": {
+        "name": "Unit state",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "turning_off": "Turning off",
+          "turning_on": "Turning on",
+          "unknown": "Unknown"
+        }
+      },
+      "mode": {
+        "name": "Operating mode",
+        "state": {
+          "heat": "Heating",
+          "cool": "Cooling",
+          "auto_heat": "Auto Heating",
+          "auto_cool": "Auto Cooling",
+          "fan_only": "Ventilation",
+          "off": "Off",
+          "unknown": "Unknown"
+        }
+      },
+      "mode_set": {
+        "name": "Requested mode",
+        "state": {
+          "heat": "Heating",
+          "cool": "Cooling",
+          "auto": "Auto",
+          "fan_only": "Ventilation",
+          "unknown": "Unknown"
+        }
+      },
+      "color_ind": {
+        "name": "Power indicator",
+        "state": {
+          "off": "Off",
+          "transition": "Transitioning",
+          "on": "On",
+          "unknown": "Unknown"
+        }
+      },
+      "color_msg": {
+        "name": "Message status",
+        "state": {
+          "normal": "Normal",
+          "warning": "Warning",
+          "error": "Error",
+          "unknown": "Unknown"
+        }
+      },
+      "msg": {
+        "name": "Device message"
+      },
+      "firmware_ver": {
+        "name": "Firmware version"
+      },
+      "protocol_ver": {
+        "name": "Protocol version"
+      },
+      "humidity_supply": {
+        "name": "Supply air humidity"
+      },
+      "humidity_room": {
+        "name": "Room humidity"
+      },
+      "humidity_outdoor": {
+        "name": "Outdoor air humidity"
+      },
+      "co2": {
+        "name": "CO₂"
+      },
+      "voc": {
+        "name": "VOC (air quality)"
+      },
+      "filter1_pollution": {
+        "name": "Filter 1",
+        "state_attributes": {
+          "status": {
+            "name": "Status"
+          },
+          "status_key": {
+            "name": "Status key",
+            "state": {
+              "no_data": "No data",
+              "excellent": "Excellent",
+              "good": "Good",
+              "replace_soon": "Replace soon",
+              "clogged": "Clogged"
+            }
+          }
+        }
+      },
+      "filter2_pollution": {
+        "name": "Filter 2",
+        "state_attributes": {
+          "status": {
+            "name": "Status"
+          },
+          "status_key": {
+            "name": "Status key",
+            "state": {
+              "no_data": "No data",
+              "excellent": "Excellent",
+              "good": "Good",
+              "replace_soon": "Replace soon",
+              "clogged": "Clogged"
+            }
+          }
+        }
+      },
+      "filter3_pollution": {
+        "name": "Filter 3",
+        "state_attributes": {
+          "status": {
+            "name": "Status"
+          },
+          "status_key": {
+            "name": "Status key",
+            "state": {
+              "no_data": "No data",
+              "excellent": "Excellent",
+              "good": "Good",
+              "replace_soon": "Replace soon",
+              "clogged": "Clogged"
+            }
+          }
+        }
+      },
+      "filter4_pollution": {
+        "name": "Filter 4",
+        "state_attributes": {
+          "status": {
+            "name": "Status"
+          },
+          "status_key": {
+            "name": "Status key",
+            "state": {
+              "no_data": "No data",
+              "excellent": "Excellent",
+              "good": "Good",
+              "replace_soon": "Replace soon",
+              "clogged": "Clogged"
+            }
+          }
+        }
+      }
+    }
+  }
+}
