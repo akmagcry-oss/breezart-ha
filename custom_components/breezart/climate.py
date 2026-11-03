@@ -61,16 +61,10 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
     )
 
     def __init__(self, coordinator: BreezartDataCoordinator) -> None:
-        """Initialize the climate entity with model preset ranges."""
+        """Initialize the climate entity with model preset and configured ranges."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_{coordinator.client.host}_{TRANSLATION_KEY_CLIMATE}"
-        self._attr_min_temp = float(coordinator.client.temp_min)
-        self._attr_max_temp = float(coordinator.client.temp_max)
         self._attr_target_temperature_step = DEFAULT_TEMP_STEP
-
-        speed_min = int(coordinator.client.speed_min)
-        speed_max = int(coordinator.client.speed_max)
-        self._attr_fan_modes = [str(s) for s in range(speed_min, speed_max + 1)]
 
         hvac_modes = [HVACMode.OFF, HVACMode.FAN_ONLY, HVACMode.HEAT, HVACMode.AUTO]
         if coordinator.client.has_cooler:
@@ -81,6 +75,23 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         self._optimistic_fan_mode: str | None = None
         self._optimistic_hvac_mode: HVACMode | None = None
         self._optimistic_set_time: float = 0.0
+
+    @property
+    def min_temp(self) -> float:
+        """Return minimum target temperature from client/controller."""
+        return float(self.coordinator.client.temp_min)
+
+    @property
+    def max_temp(self) -> float:
+        """Return maximum target temperature from client/controller."""
+        return float(self.coordinator.client.temp_max)
+
+    @property
+    def fan_modes(self) -> list[str]:
+        """Return available fan speed steps (e.g. 1..10)."""
+        speed_min = int(self.coordinator.client.speed_min)
+        speed_max = int(self.coordinator.client.speed_max)
+        return [str(s) for s in range(speed_min, speed_max + 1)]
 
     def _handle_coordinator_update(self) -> None:
         """Clear optimistic state only after hold period expires."""

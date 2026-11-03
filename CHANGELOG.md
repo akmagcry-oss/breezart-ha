@@ -2,6 +2,19 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.1.1] - 2026-11-04
+
+### Added
+- **Configurable Fan Speeds (`1–10`) & Heating Temperature Bounds (`5–35 °C`)**:
+  - Added user-configurable `speed_max` (`1..10`, default `10`), `temp_min` (`5..44 °C`, default `5 °C`), and `temp_max` (`6..45 °C`, default `35 °C`) fields in both initial setup (`ConfigFlow`) and `OptionsFlow` ("Configure") in `custom_components/breezart/config_flow.py` and `custom_components/breezart/__init__.py`.
+  - Added automatic reading of hardware temperature bounds from `INPUT[70..71]` (`Min_task` / `Max_task` on Modbus TCP `JL204c7`) and `VPr07` (on Native TCP) in `custom_components/breezart/coordinator.py` when not overridden by the user.
+  - Updated Russian and English translations for `speed_max`, `temp_min`, and `temp_max` in `strings.json`, `translations/ru.json`, and `translations/en.json`.
+
+### Changed
+- **JLV135 / JL204c7 Default Alignment & Dynamic Entity Bounds**:
+  - Updated default fan speeds to `10` (`1..10`) and heating temperature limits to `5–35 °C` (`DEFAULT_SPEED_MAX = 10`, `DEFAULT_TEMP_MIN = 5`, `DEFAULT_TEMP_MAX = 35`) across `MODEL_PRESETS` in `custom_components/breezart/const.py` so `HOLDING[0]` (`10%..100%`) maps `1:1` with the 10-speed **JLV135** control panel.
+  - Converted `min_temp`, `max_temp`, `fan_modes` in `custom_components/breezart/climate.py` and `native_min_value`, `native_max_value` in `custom_components/breezart/number.py` to dynamic `@property` methods reading live bounds from the coordinator client.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
@@ -15,9 +28,9 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 - **Automatic Protocol Detection (`auto`)**:
   - Added `async_detect_and_connect_client` to automatically probe and fall back between **Modbus TCP (`port 502`)** and **Native TCP (`port 1560`)** during integration setup and startup.
 - **Configuration Flow & Localization Enhancements**:
-  - Added `protocol` selector (`auto`, `modbus_tcp`, `native_tcp`) and `slave_id` (default `1`) to initial setup and `OptionsFlow` in `config_flow.py`.
+  - Added `protocol` selector (`auto`, `modbus_tcp`, `native_tcp`) and `slave_id` setting (default `1`) in both initial setup and `OptionsFlow` in `config_flow.py`.
   - Made the `password` field optional for Modbus TCP connections (not required by `JLV135` / `JL204c7`).
-  - Added Russian and English translations for protocol options and `slave_id` in `strings.json`, `translations/ru.json`, and `translations/en.json`.
+  - Added Russian and English translations for all new protocol and Modbus fields in `strings.json`, `translations/ru.json`, and `translations/en.json`.
 - **Dual-Protocol Diagnostic Utility (`test_connection.py`)**:
   - Updated `test_connection.py` to test both Modbus TCP (`port 502`) and Native TCP (`port 1560`) with automatic fallback and detailed register decoding.
 

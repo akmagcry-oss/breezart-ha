@@ -19,12 +19,13 @@ import {
   translateState,
 } from './breezart';
 
-test('model presets provide distinct capabilities for 400_lux, 550_lux, 550_aqua, 1000_lux', () => {
+test('model presets provide distinct capabilities and JLV135-compatible 10-speed / 5..35°C defaults', () => {
   const p400 = getModelPreset('400_lux');
   assert.equal(p400.name, '400 Lux');
   assert.equal(p400.heaterType, 'electric');
-  assert.equal(p400.tempMin, 10);
-  assert.equal(p400.speedMax, 8);
+  assert.equal(p400.tempMin, 5);
+  assert.equal(p400.tempMax, 35);
+  assert.equal(p400.speedMax, 10);
   assert.equal(p400.hasWaterHeater, false);
   assert.equal(p400.enabledSensors.includes('power_consumption'), true);
   assert.equal(p400.enabledSensors.includes('temp_water'), false);
@@ -33,11 +34,16 @@ test('model presets provide distinct capabilities for 400_lux, 550_lux, 550_aqua
   assert.equal(p550Lux.name, '550 Lux');
   assert.equal(p550Lux.airflowM3h, 550);
   assert.equal(p550Lux.heaterType, 'electric');
+  assert.equal(p550Lux.tempMin, 5);
+  assert.equal(p550Lux.tempMax, 35);
+  assert.equal(p550Lux.speedMax, 10);
 
   const p550Aqua = getModelPreset('550_aqua');
   assert.equal(p550Aqua.name, '550 Aqua');
   assert.equal(p550Aqua.heaterType, 'water');
-  assert.equal(p550Aqua.tempMin, 15);
+  assert.equal(p550Aqua.tempMin, 5);
+  assert.equal(p550Aqua.tempMax, 35);
+  assert.equal(p550Aqua.speedMax, 10);
   assert.equal(p550Aqua.hasHumidifier, true);
   assert.equal(p550Aqua.enabledSensors.includes('temp_water'), true);
   assert.equal(p550Aqua.enabledSensors.includes('humidity'), true);
@@ -148,7 +154,7 @@ test('all entity translation keys exist in both Russian and English catalogs and
   }
 });
 
-test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.0 bump with CHANGELOG history', () => {
+test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.1 bump with CHANGELOG history', () => {
   const rootDir = process.cwd();
 
   // 1) BLOG_ARTICLE.md must be deleted
@@ -158,34 +164,38 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.0 
     'BLOG_ARTICLE.md should be removed'
   );
 
-  // 2) manifest.json and package.json must have version 1.1.0 and akmagcry-oss/breezart-ha links
+  // 2) manifest.json and package.json must have version 1.1.1 and akmagcry-oss/breezart-ha links
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, 'custom_components/breezart/manifest.json'), 'utf8')
   );
-  assert.equal(manifest.version, '1.1.0');
+  assert.equal(manifest.version, '1.1.1');
   assert.equal(manifest.documentation, 'https://github.com/akmagcry-oss/breezart-ha');
   assert.equal(manifest.issue_tracker, 'https://github.com/akmagcry-oss/breezart-ha/issues');
   assert.deepEqual(manifest.codeowners, ['@akmagcry-oss']);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.1.0');
+  assert.equal(pkg.version, '1.1.1');
 
-  // 3) CHANGELOG.md must contain both [1.1.0] (Modbus TCP patch) and [1.0.0] (initial release)
+  // 3) CHANGELOG.md must contain [1.1.1], [1.1.0], and [1.0.0] in descending order
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
+  assert.equal(changelog.includes('## [1.1.1]'), true);
   assert.equal(changelog.includes('## [1.1.0]'), true);
   assert.equal(changelog.includes('## [1.0.0]'), true);
+  assert.equal(
+    changelog.indexOf('## [1.1.1]') < changelog.indexOf('## [1.1.0]'),
+    true,
+    '[1.1.1] should appear before [1.1.0] in CHANGELOG.md'
+  );
   assert.equal(
     changelog.indexOf('## [1.1.0]') < changelog.indexOf('## [1.0.0]'),
     true,
     '[1.1.0] should appear before [1.0.0] in CHANGELOG.md'
   );
-  assert.equal(changelog.includes('1.2.0'), false);
 
   const readme = fs.readFileSync(path.join(rootDir, 'README.md'), 'utf8');
   assert.equal(readme.includes('https://github.com/akmagcry-oss/breezart-ha'), true);
   assert.equal(readme.includes('smirnowegor/Breezart-Home-Assistant-Integration'), false);
-  assert.equal(readme.includes('v1.1.0'), true);
-  assert.equal(readme.includes('1.2.0'), false);
+  assert.equal(readme.includes('v1.1.1'), true);
 
   // 4) CONFIG_FLOW_VERSION must remain 1
   assert.equal(BREEZART_CONSTANTS.CONFIG_FLOW_VERSION, 1);

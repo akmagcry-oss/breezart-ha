@@ -10,7 +10,10 @@
           "host": "Host (IP address)",
           "port": "TCP Port (502 for Modbus TCP, 1560 for Native TCP)",
           "slave_id": "Modbus Unit / Slave ID (default: 1)",
-          "password": "Remote Access Password (only for Native TCP 1560)"
+          "password": "Remote Access Password (only for Native TCP 1560)",
+          "speed_max": "Number of Fan Speeds (default: 10)",
+          "temp_min": "Minimum Heating Temperature, °C (default: 5)",
+          "temp_max": "Maximum Heating Temperature, °C (default: 35)"
         }
       }
     },
@@ -26,12 +29,15 @@
   "options": {
     "step": {
       "init": {
-        "title": "Breezart Model & Protocol Options",
-        "description": "Select the Breezart model preset and transport protocol",
+        "title": "Breezart Model, Protocol & Range Options",
+        "description": "Configure the Breezart model preset, transport protocol, number of fan speeds, and heating temperature bounds",
         "data": {
           "model": "Unit Model Preset",
           "protocol": "Connection Protocol",
-          "slave_id": "Modbus Unit / Slave ID"
+          "slave_id": "Modbus Unit / Slave ID",
+          "speed_max": "Number of Fan Speeds (1–10)",
+          "temp_min": "Minimum Heating Temperature (°C)",
+          "temp_max": "Maximum Heating Temperature (°C)"
         }
       }
     }

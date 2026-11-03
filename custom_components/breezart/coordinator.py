@@ -285,8 +285,12 @@ class BreezartTCPClient:
         password: int | str = DEFAULT_PASSWORD,
         timeout: int = DEFAULT_TIMEOUT,
         model: str = DEFAULT_MODEL,
+        *,
+        speed_max: int | None = None,
+        temp_min: int | None = None,
+        temp_max: int | None = None,
     ) -> None:
-        """Initialize the native TCP client with model preset defaults."""
+        """Initialize the native TCP client with model preset defaults and optional user bounds."""
         self.host = host
         self.port = port
         self.password = int(password) if str(password).strip().isdigit() else int(DEFAULT_PASSWORD)
@@ -297,10 +301,20 @@ class BreezartTCPClient:
         self._lock = asyncio.Lock()
 
         preset = get_model_preset(model)
-        self.temp_min: int = int(preset["temp_min"])
-        self.temp_max: int = int(preset["temp_max"])
+        self._user_temp_min: int | None = int(temp_min) if temp_min is not None else None
+        self._user_temp_max: int | None = int(temp_max) if temp_max is not None else None
+        self._user_speed_max: int | None = int(speed_max) if speed_max is not None else None
+
+        self.temp_min: int = (
+            self._user_temp_min if self._user_temp_min is not None else int(preset["temp_min"])
+        )
+        self.temp_max: int = (
+            self._user_temp_max if self._user_temp_max is not None else int(preset["temp_max"])
+        )
         self.speed_min: int = int(preset["speed_min"])
-        self.speed_max: int = int(preset["speed_max"])
+        self.speed_max: int = (
+            self._user_speed_max if self._user_speed_max is not None else int(preset["speed_max"])
+        )
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
         self.firmware_ver: int | str | None = None
@@ -401,21 +415,21 @@ class BreezartTCPClient:
         hw_cooler = bool(_parse_bits(parts[VPR07_IDX_MISC], BIT_IS_COOLER))
         hw_humid = bool(_parse_bits(parts[VPR07_IDX_MISC], BIT_IS_HUMIDIFIER))
 
-        if self.model == MODEL_CUSTOM:
-            if hw_temp_max > hw_temp_min:
+        preset = get_model_preset(self.model)
+        if 5 <= hw_temp_min < hw_temp_max <= 45:
+            if self._user_temp_min is None:
                 self.temp_min = hw_temp_min
+            if self._user_temp_max is None:
                 self.temp_max = hw_temp_max
-            if hw_speed_max >= hw_speed_min > 0:
-                self.speed_min = hw_speed_min
+        if 1 <= hw_speed_min < hw_speed_max <= 10:
+            self.speed_min = hw_speed_min
+            if self._user_speed_max is None:
                 self.speed_max = hw_speed_max
+
+        if self.model == MODEL_CUSTOM:
             self.has_cooler = hw_cooler
             self.has_humidifier = hw_humid
         else:
-            preset = get_model_preset(self.model)
-            self.temp_min = hw_temp_min if hw_temp_max > hw_temp_min else int(preset["temp_min"])
-            self.temp_max = hw_temp_max if hw_temp_max > hw_temp_min else int(preset["temp_max"])
-            self.speed_min = int(preset["speed_min"])
-            self.speed_max = int(preset["speed_max"])
             self.has_cooler = bool(preset["has_cooler"]) or hw_cooler
             self.has_humidifier = bool(preset["has_humidifier"]) or hw_humid
 
@@ -585,8 +599,12 @@ class BreezartModbusClient:
         slave_id: int = DEFAULT_SLAVE_ID,
         timeout: int = DEFAULT_TIMEOUT,
         model: str = DEFAULT_MODEL,
+        *,
+        speed_max: int | None = None,
+        temp_min: int | None = None,
+        temp_max: int | None = None,
     ) -> None:
-        """Initialize the Modbus TCP client with model preset defaults."""
+        """Initialize the Modbus TCP client with model preset defaults and optional user bounds."""
         self.host = host
         self.port = port
         self.slave_id = int(slave_id)
@@ -599,10 +617,20 @@ class BreezartModbusClient:
         self._last_filter1_dust: float | None = None
 
         preset = get_model_preset(model)
-        self.temp_min: int = int(preset["temp_min"])
-        self.temp_max: int = int(preset["temp_max"])
+        self._user_temp_min: int | None = int(temp_min) if temp_min is not None else None
+        self._user_temp_max: int | None = int(temp_max) if temp_max is not None else None
+        self._user_speed_max: int | None = int(speed_max) if speed_max is not None else None
+
+        self.temp_min: int = (
+            self._user_temp_min if self._user_temp_min is not None else int(preset["temp_min"])
+        )
+        self.temp_max: int = (
+            self._user_temp_max if self._user_temp_max is not None else int(preset["temp_max"])
+        )
         self.speed_min: int = int(preset["speed_min"])
-        self.speed_max: int = int(preset["speed_max"])
+        self.speed_max: int = (
+            self._user_speed_max if self._user_speed_max is not None else int(preset["speed_max"])
+        )
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
         self.firmware_ver: int | str | None = None
@@ -756,6 +784,29 @@ class BreezartModbusClient:
                     f"Modbus write exception 0x{exc_code:02x} on reg={reg_addr}"
                 )
 
+    def _apply_hw_temp_bounds(self, min_task_raw: int, max_task_raw: int) -> None:
+        """Decode and apply hardware min/max temperature bounds from INPUT[70..71] if not overridden."""
+        if (
+            min_task_raw in MODBUS_INVALID_VALUES
+            or max_task_raw in MODBUS_INVALID_VALUES
+            or min_task_raw == 0
+            or max_task_raw == 0
+        ):
+            return
+        min_signed = _to_signed16(min_task_raw)
+        max_signed = _to_signed16(max_task_raw)
+        if min_signed >= 50 and max_signed >= 100:
+            hw_min = int(round(min_signed / TEMP_DIVISOR))
+            hw_max = int(round(max_signed / TEMP_DIVISOR))
+        else:
+            hw_min = int(min_signed)
+            hw_max = int(max_signed)
+        if 5 <= hw_min < hw_max <= 45:
+            if self._user_temp_min is None:
+                self.temp_min = hw_min
+            if self._user_temp_max is None:
+                self.temp_max = hw_max
+
     async def get_properties(self) -> None:
         """Read JL204c7 hardware/firmware signature and verify Modbus responsiveness."""
         # First verify Holding[0..8] can be read (core control block)
@@ -764,6 +815,18 @@ class BreezartModbusClient:
             MODBUS_HR_BLOCK_START,
             MODBUS_HR_BLOCK_COUNT,
         )
+
+        # Read INPUT[50..71] to check if hardware temperature limits (INPUT[70..71]) are available
+        try:
+            sensors_ir = await self._read_registers(
+                MODBUS_FC_READ_INPUT,
+                MODBUS_IR_SENSORS_BLOCK_START,
+                MODBUS_IR_SENSORS_BLOCK_COUNT,
+            )
+            if len(sensors_ir) >= 22:
+                self._apply_hw_temp_bounds(sensors_ir[20], sensors_ir[21])
+        except Exception as err:
+            _LOGGER.debug("Optional JL204c7 sensor/limit block (50..71) not read during init: %s", err)
 
         # Optionally read system signature block INPUT[65000..65014]
         try:
@@ -953,15 +1016,9 @@ class BreezartModbusClient:
         humidity_outdoor = _parse_io_data(sensors_ir[10], sensors_ir[11], is_signed=False)
         temp_water = _parse_io_data(sensors_ir[12], sensors_ir[13], is_signed=True)
 
-        # Update dynamic min/max temperature limits if valid in custom mode
-        min_task_raw = sensors_ir[20]
-        max_task_raw = sensors_ir[21]
-        if self.model == MODEL_CUSTOM and min_task_raw not in MODBUS_INVALID_VALUES and max_task_raw not in MODBUS_INVALID_VALUES:
-            hw_min = int(_to_signed16(min_task_raw) / TEMP_DIVISOR)
-            hw_max = int(_to_signed16(max_task_raw) / TEMP_DIVISOR)
-            if 5 <= hw_min < hw_max <= 45:
-                self.temp_min = hw_min
-                self.temp_max = hw_max
+        # Update dynamic min/max temperature limits from INPUT[70..71] if not overridden by user
+        if len(sensors_ir) >= 22:
+            self._apply_hw_temp_bounds(sensors_ir[20], sensors_ir[21])
 
         power_consumption: float | None = None
         try:
@@ -1050,6 +1107,10 @@ def create_breezart_client(
     protocol: str = DEFAULT_PROTOCOL,
     slave_id: int = DEFAULT_SLAVE_ID,
     timeout: int = DEFAULT_TIMEOUT,
+    *,
+    speed_max: int | None = None,
+    temp_min: int | None = None,
+    temp_max: int | None = None,
 ) -> BreezartClientType:
     """Create the appropriate Breezart client (Modbus TCP on 502 or Native TCP on 1560)."""
     if protocol == PROTOCOL_MODBUS_TCP or (
@@ -1061,6 +1122,9 @@ def create_breezart_client(
             slave_id=slave_id,
             timeout=timeout,
             model=model,
+            speed_max=speed_max,
+            temp_min=temp_min,
+            temp_max=temp_max,
         )
     return BreezartTCPClient(
         host=host,
@@ -1068,6 +1132,9 @@ def create_breezart_client(
         password=password,
         timeout=timeout,
         model=model,
+        speed_max=speed_max,
+        temp_min=temp_min,
+        temp_max=temp_max,
     )
 
 
@@ -1079,6 +1146,10 @@ async def async_detect_and_connect_client(
     protocol: str = DEFAULT_PROTOCOL,
     slave_id: int = DEFAULT_SLAVE_ID,
     timeout: int = DEFAULT_TIMEOUT,
+    *,
+    speed_max: int | None = None,
+    temp_min: int | None = None,
+    temp_max: int | None = None,
 ) -> tuple[BreezartClientType, str, int]:
     """Connect and verify device properties, with automatic fallback between port 502 (Modbus) and 1560 (Native)."""
     if protocol == PROTOCOL_MODBUS_TCP:
@@ -1089,6 +1160,9 @@ async def async_detect_and_connect_client(
             slave_id=slave_id,
             timeout=timeout,
             model=model,
+            speed_max=speed_max,
+            temp_min=temp_min,
+            temp_max=temp_max,
         )
         await client.connect()
         await client.get_properties()
@@ -1101,6 +1175,9 @@ async def async_detect_and_connect_client(
             password=password,
             timeout=timeout,
             model=model,
+            speed_max=speed_max,
+            temp_min=temp_min,
+            temp_max=temp_max,
         )
         await client.connect()
         await client.get_properties()
@@ -1130,6 +1207,9 @@ async def async_detect_and_connect_client(
             protocol=cand_proto,
             slave_id=slave_id,
             timeout=timeout,
+            speed_max=speed_max,
+            temp_min=temp_min,
+            temp_max=temp_max,
         )
         try:
             await cand_client.connect()

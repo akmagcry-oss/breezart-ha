@@ -40,6 +40,9 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const [portInput, setPortInput] = useState<string>(String(BREEZART_CONSTANTS.DEFAULT_MODBUS_PORT));
   const [slaveIdInput, setSlaveIdInput] = useState<string>(String(BREEZART_CONSTANTS.DEFAULT_SLAVE_ID));
   const [passwordInput, setPasswordInput] = useState<string>(BREEZART_CONSTANTS.DEFAULT_PASSWORD);
+  const [speedMaxInput, setSpeedMaxInput] = useState<number>(preset.speedMax);
+  const [tempMinInput, setTempMinInput] = useState<number>(preset.tempMin);
+  const [tempMaxInput, setTempMaxInput] = useState<number>(preset.tempMax);
   const [configError, setConfigError] = useState<string | null>(null);
   const [configSavedBanner, setConfigSavedBanner] = useState<string | null>(null);
 
@@ -51,7 +54,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const [outdoorTemp, setOutdoorTemp] = useState<number>(-4.5);
   const [roomTemp, setRoomTemp] = useState<number>(22.4);
   const [waterTemp, setWaterTemp] = useState<number>(48.0);
-  const [targetSpeed, setTargetSpeed] = useState<number>(4);
+  const [targetSpeed, setTargetSpeed] = useState<number>(5);
   const [humidity, setHumidity] = useState<number>(44);
   const [co2, setCo2] = useState<number>(520);
   const [voc, setVoc] = useState<number>(115);
@@ -66,12 +69,16 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
     `FC=0x03 Read Holding[0..8]: ${buildModbusReadFrameHex(0x03, 0, 9, 1, 1)}`
   );
 
+  const activeSpeedMax = Math.max(1, Math.min(10, speedMaxInput || preset.speedMax));
+  const activeTempMin = Math.max(5, Math.min(35, tempMinInput || preset.tempMin));
+  const activeTempMax = Math.max(activeTempMin + 1, Math.min(45, tempMaxInput || preset.tempMax));
+
   const clampedTargetTemp = Math.min(
-    preset.tempMax,
-    Math.max(preset.tempMin, targetTemp)
+    activeTempMax,
+    Math.max(activeTempMin, targetTemp)
   );
   const clampedSpeed = Math.min(
-    preset.speedMax,
+    activeSpeedMax,
     Math.max(preset.speedMin, targetSpeed)
   );
 
@@ -192,7 +199,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const handleSpeedChange = (nextSpeed: number) => {
     setTargetSpeed(nextSpeed);
     if (isModbusActive) {
-      const rawPct100 = scaleSpeedToModbusPercent100(nextSpeed, preset.speedMax);
+      const rawPct100 = scaleSpeedToModbusPercent100(nextSpeed, activeSpeedMax);
       setLastTxCommand(
         `FC=0x06 Write Holding[0] (fan_task=${rawPct100} -> ${Math.round(rawPct100 / 100)}%): ${buildModbusWriteSingleFrameHex(
           BREEZART_CONSTANTS.MODBUS_HR_FAN_SPEED,
@@ -319,17 +326,17 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
     },
     {
       key: 'speed',
-      value: `${power ? clampedSpeed : 0} / ${preset.speedMax}`,
+      value: `${power ? clampedSpeed : 0} / ${activeSpeedMax}`,
       category: 'measurement',
     },
     {
       key: 'speed_target',
-      value: `${clampedSpeed} / ${preset.speedMax}`,
+      value: `${clampedSpeed} / ${activeSpeedMax}`,
       category: 'diagnostic',
     },
     {
       key: 'speed_fact',
-      value: `${power ? Math.round((clampedSpeed / preset.speedMax) * 100) : 0} %`,
+      value: `${power ? Math.round((clampedSpeed / activeSpeedMax) * 100) : 0} %`,
       category: 'measurement',
     },
     {
@@ -466,13 +473,13 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
     : ['off', 'fan_only', 'heat', 'auto'];
 
   const speedButtons = Array.from(
-    { length: preset.speedMax - preset.speedMin + 1 },
+    { length: activeSpeedMax - preset.speedMin + 1 },
     (_, idx) => preset.speedMin + idx
   );
 
   // Simulated VPr07 response packet
-  const vprTemprWord = ((preset.tempMax << 8) | preset.tempMin).toString(16).padStart(4, '0');
-  const vprSpeedWord = ((preset.speedMax << 8) | preset.speedMin).toString(16).padStart(4, '0');
+  const vprTemprWord = ((activeTempMax << 8) | activeTempMin).toString(16).padStart(4, '0');
+  const vprSpeedWord = ((activeSpeedMax << 8) | preset.speedMin).toString(16).padStart(4, '0');
   const vprMiscWord = (
     ((preset.hasCooler ? 1 : 0) << 14) |
     ((preset.hasHumidifier ? 1 : 0) << 13)
@@ -599,6 +606,60 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label
+                    htmlFor="config-speed-max-input"
+                    className="block text-xs font-semibold text-slate-700 mb-1.5"
+                  >
+                    {t.config.speedMaxLabel}
+                  </label>
+                  <input
+                    id="config-speed-max-input"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={speedMaxInput}
+                    onChange={(e) => setSpeedMaxInput(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="config-temp-min-input"
+                    className="block text-xs font-semibold text-slate-700 mb-1.5"
+                  >
+                    {t.config.tempMinLabel}
+                  </label>
+                  <input
+                    id="config-temp-min-input"
+                    type="number"
+                    min={5}
+                    max={30}
+                    value={tempMinInput}
+                    onChange={(e) => setTempMinInput(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="config-temp-max-input"
+                    className="block text-xs font-semibold text-slate-700 mb-1.5"
+                  >
+                    {t.config.tempMaxLabel}
+                  </label>
+                  <input
+                    id="config-temp-max-input"
+                    type="number"
+                    min={15}
+                    max={45}
+                    value={tempMaxInput}
+                    onChange={(e) => setTempMaxInput(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label
                   htmlFor="config-password-input"
@@ -675,8 +736,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                 {lang === 'ru' ? 'Диапазон уставок:' : 'Preset bounds:'}
               </span>
               <span className="font-mono tabular-nums text-slate-800">
-                {preset.tempMin}..{preset.tempMax} °C · {lang === 'ru' ? 'Скор.' : 'Speed'}{' '}
-                {preset.speedMin}..{preset.speedMax}
+                {activeTempMin}..{activeTempMax} °C · {lang === 'ru' ? 'Скор.' : 'Speed'}{' '}
+                {preset.speedMin}..{activeSpeedMax}
               </span>
             </div>
           </div>
@@ -731,18 +792,18 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                   {clampedTargetTemp} °C
                 </p>
                 <p className="text-xs text-slate-500 mt-1 tabular-nums">
-                  Min {preset.tempMin} °C · Max {preset.tempMax} °C
+                  Min {activeTempMin} °C · Max {activeTempMax} °C
                 </p>
               </div>
 
               <div className="border border-slate-200 rounded-lg p-4">
                 <p className="text-xs text-slate-500">{translateEntity('fan_speed', lang)}</p>
                 <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 mt-1">
-                  {power ? clampedSpeed : 0} <span className="text-sm font-normal text-slate-500">/ {preset.speedMax}</span>
+                  {power ? clampedSpeed : 0} <span className="text-sm font-normal text-slate-500">/ {activeSpeedMax}</span>
                 </p>
                 <p className="text-xs text-slate-500 mt-1 tabular-nums">
                   {preset.airflowM3h > 0
-                    ? `${Math.round((clampedSpeed / preset.speedMax) * preset.airflowM3h)} m³/h`
+                    ? `${Math.round((clampedSpeed / activeSpeedMax) * preset.airflowM3h)} m³/h`
                     : 'Auto VPr07 / Modbus'}
                 </p>
               </div>
@@ -786,8 +847,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
               <input
                 id="target-temp-slider"
                 type="range"
-                min={preset.tempMin}
-                max={preset.tempMax}
+                min={activeTempMin}
+                max={activeTempMax}
                 step={1}
                 value={clampedTargetTemp}
                 onChange={(e) => handleTempChange(Number(e.target.value))}
@@ -800,11 +861,11 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
               <div className="flex justify-between text-xs font-semibold text-slate-700 mb-2">
                 <span>
                   {translateEntity('fan_speed', lang)} (
-                  {isModbusActive ? 'Holding[0] %×100' : 'VWSpd'} · 1..{preset.speedMax})
+                  {isModbusActive ? 'Holding[0] %×100' : 'VWSpd'} · 1..{activeSpeedMax})
                 </span>
                 <span className="font-mono tabular-nums">
                   {lang === 'ru' ? 'Выбрана скорость' : 'Selected speed'}: {clampedSpeed} (
-                  {Math.round((clampedSpeed / preset.speedMax) * 100)}%)
+                  {Math.round((clampedSpeed / activeSpeedMax) * 100)}%)
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">

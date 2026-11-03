@@ -13,6 +13,9 @@ CONFIG_FLOW_VERSION: Final[int] = 1
 CONF_MODEL: Final[str] = "model"
 CONF_PROTOCOL: Final[str] = "protocol"
 CONF_SLAVE_ID: Final[str] = "slave_id"
+CONF_SPEED_MAX: Final[str] = "speed_max"
+CONF_TEMP_MIN: Final[str] = "temp_min"
+CONF_TEMP_MAX: Final[str] = "temp_max"
 DATA_CLIENT: Final[str] = "client"
 DATA_COORDINATOR: Final[str] = "coordinator"
 DATA_MODEL: Final[str] = "model"
@@ -220,10 +223,14 @@ UNIT_PPM: Final[str] = "ppm"
 UNIT_PPB: Final[str] = "ppb"
 DEFAULT_TEMP_STEP: Final[float] = 1.0
 DEFAULT_SPEED_STEP: Final[float] = 1.0
-DEFAULT_TEMP_MIN: Final[int] = 10
-DEFAULT_TEMP_MAX: Final[int] = 30
+DEFAULT_TEMP_MIN: Final[int] = 5
+DEFAULT_TEMP_MAX: Final[int] = 35
 DEFAULT_SPEED_MIN: Final[int] = 1
 DEFAULT_SPEED_MAX: Final[int] = 10
+MIN_ALLOWED_TEMP_BOUND: Final[int] = 5
+MAX_ALLOWED_TEMP_BOUND: Final[int] = 45
+MIN_ALLOWED_SPEED_MAX: Final[int] = 1
+MAX_ALLOWED_SPEED_MAX: Final[int] = 10
 
 # UnitState protocol codes & canonical state keys
 UNIT_STATE_OFF: Final[int] = 0
@@ -462,10 +469,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "400 Lux",
         "airflow_m3h": 400,
         "heater_type": "electric",
-        "temp_min": 10,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 8,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": False,
         "has_humidifier": False,
         "has_water_heater": False,
@@ -480,10 +487,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "550 Lux",
         "airflow_m3h": 550,
         "heater_type": "electric",
-        "temp_min": 10,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 8,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": False,
         "has_humidifier": False,
         "has_water_heater": False,
@@ -498,10 +505,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "550 Aqua",
         "airflow_m3h": 550,
         "heater_type": "water",
-        "temp_min": 15,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 8,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": False,
         "has_humidifier": True,
         "has_water_heater": True,
@@ -517,10 +524,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "700 Lux",
         "airflow_m3h": 700,
         "heater_type": "electric",
-        "temp_min": 10,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 8,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": True,
         "has_humidifier": False,
         "has_water_heater": False,
@@ -536,10 +543,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "1000 Lux",
         "airflow_m3h": 1000,
         "heater_type": "electric",
-        "temp_min": 10,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 10,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": True,
         "has_humidifier": False,
         "has_water_heater": False,
@@ -556,10 +563,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "1000 Aqua",
         "airflow_m3h": 1000,
         "heater_type": "water",
-        "temp_min": 15,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 10,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": True,
         "has_humidifier": True,
         "has_water_heater": True,
@@ -577,10 +584,10 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "name": "2000 Lux",
         "airflow_m3h": 2000,
         "heater_type": "electric",
-        "temp_min": 10,
-        "temp_max": 30,
-        "speed_min": 1,
-        "speed_max": 10,
+        "temp_min": DEFAULT_TEMP_MIN,
+        "temp_max": DEFAULT_TEMP_MAX,
+        "speed_min": DEFAULT_SPEED_MIN,
+        "speed_max": DEFAULT_SPEED_MAX,
         "has_cooler": True,
         "has_humidifier": True,
         "has_water_heater": False,

@@ -35,8 +35,16 @@ class BreezartTargetTemperature(CoordinatorEntity[BreezartDataCoordinator], Numb
         """Initialize."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_{coordinator.client.host}_target_temp"
-        self._attr_native_min_value = float(coordinator.client.temp_min)
-        self._attr_native_max_value = float(coordinator.client.temp_max)
+
+    @property
+    def native_min_value(self) -> float:
+        """Return minimum target temperature from client/controller."""
+        return float(self.coordinator.client.temp_min)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return maximum target temperature from client/controller."""
+        return float(self.coordinator.client.temp_max)
 
     @property
     def native_value(self) -> float | None:
@@ -67,8 +75,16 @@ class BreezartFanSpeed(CoordinatorEntity[BreezartDataCoordinator], NumberEntity)
         """Initialize."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_{coordinator.client.host}_fan_speed"
-        self._attr_native_min_value = float(coordinator.client.speed_min)
-        self._attr_native_max_value = float(coordinator.client.speed_max)
+
+    @property
+    def native_min_value(self) -> float:
+        """Return minimum fan speed step."""
+        return float(self.coordinator.client.speed_min)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return maximum fan speed step."""
+        return float(self.coordinator.client.speed_max)
 
     @property
     def native_value(self) -> float | None:

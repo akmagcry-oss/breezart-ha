@@ -1,7 +1,7 @@
 {
   "domain": "breezart",
   "name": "Breezart",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "config_flow": true,
   "documentation": "https://github.com/akmagcry-oss/breezart-ha",
   "issue_tracker": "https://github.com/akmagcry-oss/breezart-ha/issues",
