@@ -35,19 +35,19 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'python',
     content: constPy,
     summary: {
-      ru: 'Единый файл всех констант протокола, битовых масок, ключей состояния, преднастроек моделей (400 Lux — 2000 Lux) и таблиц перевода RU/EN.',
-      en: 'Centralized protocol constants, bitmasks, state keys, model presets (400 Lux — 2000 Lux), and RU/EN translation tables.',
+      ru: 'Единый файл всех констант протоколов (Modbus TCP 502 и Native TCP 1560), карты регистров JL204c7, пресетов моделей (400 Lux — 2000 Lux) и таблиц перевода RU/EN.',
+      en: 'Centralized constants for both Modbus TCP (502) and Native TCP (1560), JL204c7 register map, model presets (400 Lux — 2000 Lux), and RU/EN translation tables.',
     },
     highlights: {
       ru: [
+        'Карта регистров Modbus TCP для JLV135 / JL204c7 (ПО 1.7.x): HOLDING[0..8], INPUT[10..23], INPUT[50..71], INPUT[10004], INPUT[12005]',
         'Вынесены все TCP-команды, индексы пакетов VPr07/VSt07/VSens и битовые смещения',
         'Добавлены преднастройки MODEL_PRESETS для 400 Lux, 550 Lux, 550 Aqua, 700 Lux, 1000 Lux, 1000 Aqua, 2000 Lux и Custom',
-        'Добавлены канонические ключи состояний и функции локализации translate_value / classify_filter_pollution',
       ],
       en: [
+        'Modbus TCP register map for JLV135 / JL204c7 (SW 1.7.x): HOLDING[0..8], INPUT[10..23], INPUT[50..71], INPUT[10004], INPUT[12005]',
         'Extracted all TCP commands, VPr07/VSt07/VSens packet indices, and bitmask offsets',
         'Added MODEL_PRESETS for 400 Lux, 550 Lux, 550 Aqua, 700 Lux, 1000 Lux, 1000 Aqua, 2000 Lux, and Custom',
-        'Added canonical state keys and localization helpers translate_value / classify_filter_pollution',
       ],
     },
   },
@@ -57,19 +57,19 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'python',
     content: configFlowPy,
     summary: {
-      ru: 'Мастер настройки с выбором преднастройки модели (SelectSelector) и OptionsFlow для смены модели без переустановки.',
-      en: 'Setup wizard with model preset selector (SelectSelector) and OptionsFlow to change model preset anytime.',
+      ru: 'Мастер настройки с выбором пресета модели, протокола (Auto / Modbus TCP 502 / Native TCP 1560) и автоопределением порта.',
+      en: 'Setup wizard with model preset selector, protocol selector (Auto / Modbus TCP 502 / Native TCP 1560), and automatic port detection.',
     },
     highlights: {
       ru: [
-        'Использует DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PASSWORD, DEFAULT_MODEL из const.py',
-        'Добавлен выбор модели (400_lux, 550_lux, 550_aqua и т.д.) при настройке и через OptionsFlow',
-        'Отдельный код ошибки invalid_auth при неверном пароле (VEPas)',
+        'Автоматическое определение протокола: при отказе порта 1560 автоматически проверяет Modbus TCP на порту 502 (пульт JLV135)',
+        'Добавлен выбор модели (400_lux..2000_lux) и протокола (auto, modbus_tcp, native_tcp) в мастере и OptionsFlow',
+        'Пароль сделан необязательным при работе по Modbus TCP (порт 502)',
       ],
       en: [
-        'Uses DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PASSWORD, DEFAULT_MODEL from const.py',
-        'Added model preset selector (400_lux, 550_lux, 550_aqua, etc.) in initial setup and OptionsFlow',
-        'Distinct invalid_auth error handling when remote password fails (VEPas)',
+        'Automatic protocol detection: falls back to Modbus TCP on port 502 (JLV135 panel) if port 1560 is closed',
+        'Added model preset (400_lux..2000_lux) and protocol (auto, modbus_tcp, native_tcp) selectors in initial setup and OptionsFlow',
+        'Password is optional when connecting over Modbus TCP (port 502)',
       ],
     },
   },
@@ -79,19 +79,19 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'python',
     content: coordinatorPy,
     summary: {
-      ru: 'TCP-клиент и координатор опроса Breezart без магических чисел, с поддержкой преднастроек моделей и общего DeviceInfo.',
-      en: 'Breezart TCP client and polling coordinator free of magic numbers, supporting model presets and shared DeviceInfo.',
+      ru: 'Два клиента (BreezartModbusClient на порту 502 для JLV135/JL204c7 и BreezartTCPClient на порту 1560 для TPD-283U-H) + координатор данных.',
+      en: 'Dual clients (BreezartModbusClient on port 502 for JLV135/JL204c7 and BreezartTCPClient on port 1560 for TPD-283U-H) + data coordinator.',
     },
     highlights: {
       ru: [
-        'Все индексы слов, битовые смещения, маски 0xFFFF/0x8000 и маркеры 0xFB07/255 берутся из const.py',
-        'Применяет диапазоны температур, скоростей и флаги охладителя/увлажнителя из выбранного пресета модели',
-        'Формирует динамический DeviceInfo с реальным названием выбранной модели вместо хардкода "550 Aqua"',
+        'BreezartModbusClient реализует кадры MBAP + PDU (FC 0x03, 0x04, 0x06) на чистом asyncio без внешних зависимостей',
+        'Разбор структур IO_DATA (значение + статус достоверности датчика) и битовой маски Status/Alarms контроллера JL204c7 (ПО 1.7.14)',
+        'Сериализация запросов через asyncio.Lock и безопасная пауза 60 мс для RS-485 моста панели JLV135',
       ],
       en: [
-        'All word indices, bit offsets, 0xFFFF/0x8000 masks, and 0xFB07/255 sentinels imported from const.py',
-        'Applies temperature/speed ranges and cooler/humidifier flags from selected model preset',
-        'Builds dynamic DeviceInfo with the selected model name instead of hardcoded "550 Aqua"',
+        'BreezartModbusClient implements MBAP + PDU framing (FC 0x03, 0x04, 0x06) in pure asyncio with zero external dependencies',
+        'Parses JL204c7 (SW 1.7.14) IO_DATA sensor pairs (value + reliability status) and Status/Alarms bitmasks',
+        'Serializes socket operations via asyncio.Lock with a 60ms bridge delay for the JLV135 RS-485 gateway',
       ],
     },
   },
@@ -291,16 +291,16 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'json',
     content: manifestJson,
     summary: {
-      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.0.0, репозиторий akmagcry-oss/breezart-ha).',
-      en: 'Home Assistant / HACS integration manifest (v1.0.0, repository akmagcry-oss/breezart-ha).',
+      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.1.0, репозиторий akmagcry-oss/breezart-ha).',
+      en: 'Home Assistant / HACS integration manifest (v1.1.0, repository akmagcry-oss/breezart-ha).',
     },
     highlights: {
       ru: [
-        'Первая версия 1.0.0 с поддержкой config_flow и local_polling',
+        'Версия 1.1.0 с поддержкой Modbus TCP (порт 502) и Native TCP (порт 1560)',
         'Ссылки на https://github.com/akmagcry-oss/breezart-ha и @akmagcry-oss',
       ],
       en: [
-        'Initial release v1.0.0 with config_flow and local_polling IoT class',
+        'Release v1.1.0 with Modbus TCP (port 502) and Native TCP (port 1560) support',
         'Repository links set to https://github.com/akmagcry-oss/breezart-ha and @akmagcry-oss',
       ],
     },

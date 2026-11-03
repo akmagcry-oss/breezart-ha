@@ -1,4 +1,4 @@
-"""Custom integration for Breezart ventilation systems."""
+"""Custom integration for Breezart ventilation systems (Native TCP 1560 & Modbus TCP 502)."""
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
@@ -7,13 +7,20 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_MODEL,
+    CONF_PROTOCOL,
+    CONF_SLAVE_ID,
     DATA_CLIENT,
     DATA_COORDINATOR,
     DATA_MODEL,
+    DATA_PROTOCOL,
     DEFAULT_MODEL,
+    DEFAULT_PASSWORD,
+    DEFAULT_PORT,
+    DEFAULT_PROTOCOL,
+    DEFAULT_SLAVE_ID,
     DOMAIN,
 )
-from .coordinator import BreezartDataCoordinator, BreezartTCPClient
+from .coordinator import BreezartDataCoordinator, create_breezart_client
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
@@ -30,11 +37,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     model_id = entry.options.get(
         CONF_MODEL, entry.data.get(CONF_MODEL, DEFAULT_MODEL)
     )
-    client = BreezartTCPClient(
+    protocol = entry.options.get(
+        CONF_PROTOCOL, entry.data.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
+    )
+    slave_id = int(
+        entry.options.get(
+            CONF_SLAVE_ID, entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
+        )
+    )
+    port = int(entry.data.get(CONF_PORT, DEFAULT_PORT))
+    password = entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+
+    client = create_breezart_client(
         host=entry.data[CONF_HOST],
-        port=entry.data[CONF_PORT],
-        password=entry.data[CONF_PASSWORD],
+        port=port,
+        password=password,
         model=model_id,
+        protocol=protocol,
+        slave_id=slave_id,
     )
     coordinator = BreezartDataCoordinator(hass, client, model=model_id)
     await coordinator.async_config_entry_first_refresh()
@@ -42,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_CLIENT: client,
         DATA_COORDINATOR: coordinator,
         DATA_MODEL: model_id,
+        DATA_PROTOCOL: client.protocol_type,
     }
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))

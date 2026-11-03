@@ -148,7 +148,7 @@ test('all entity translation keys exist in both Russian and English catalogs and
   }
 });
 
-test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.0.0 reset', () => {
+test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.0 bump with CHANGELOG history', () => {
   const rootDir = process.cwd();
 
   // 1) BLOG_ARTICLE.md must be deleted
@@ -158,28 +158,36 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.0.0 
     'BLOG_ARTICLE.md should be removed'
   );
 
-  // 2) manifest.json must have version 1.0.0 and akmagcry-oss/breezart-ha links
+  // 2) manifest.json and package.json must have version 1.1.0 and akmagcry-oss/breezart-ha links
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, 'custom_components/breezart/manifest.json'), 'utf8')
   );
-  assert.equal(manifest.version, '1.0.0');
+  assert.equal(manifest.version, '1.1.0');
   assert.equal(manifest.documentation, 'https://github.com/akmagcry-oss/breezart-ha');
   assert.equal(manifest.issue_tracker, 'https://github.com/akmagcry-oss/breezart-ha/issues');
   assert.deepEqual(manifest.codeowners, ['@akmagcry-oss']);
 
-  // 3) CHANGELOG.md and README.md must reflect 1.0.0 as initial release and use new GitHub URL
+  const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+  assert.equal(pkg.version, '1.1.0');
+
+  // 3) CHANGELOG.md must contain both [1.1.0] (Modbus TCP patch) and [1.0.0] (initial release)
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
-  assert.equal(changelog.includes('1.0.0'), true);
-  assert.equal(changelog.includes('1.1.0'), false);
+  assert.equal(changelog.includes('## [1.1.0]'), true);
+  assert.equal(changelog.includes('## [1.0.0]'), true);
+  assert.equal(
+    changelog.indexOf('## [1.1.0]') < changelog.indexOf('## [1.0.0]'),
+    true,
+    '[1.1.0] should appear before [1.0.0] in CHANGELOG.md'
+  );
   assert.equal(changelog.includes('1.2.0'), false);
 
   const readme = fs.readFileSync(path.join(rootDir, 'README.md'), 'utf8');
   assert.equal(readme.includes('https://github.com/akmagcry-oss/breezart-ha'), true);
   assert.equal(readme.includes('smirnowegor/Breezart-Home-Assistant-Integration'), false);
-  assert.equal(readme.includes('1.1.0'), false);
+  assert.equal(readme.includes('v1.1.0'), true);
   assert.equal(readme.includes('1.2.0'), false);
 
-  // 4) CONFIG_FLOW_VERSION must be 1
+  // 4) CONFIG_FLOW_VERSION must remain 1
   assert.equal(BREEZART_CONSTANTS.CONFIG_FLOW_VERSION, 1);
   const constPy = fs.readFileSync(
     path.join(rootDir, 'custom_components/breezart/const.py'),
@@ -187,4 +195,66 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.0.0 
   );
   assert.equal(constPy.includes('CONFIG_FLOW_VERSION: Final[int] = 1'), true);
 });
+
+test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, and dual-protocol HA support', async () => {
+  const mod = await import('./breezart');
+  assert.equal(typeof mod.buildModbusReadFrameHex, 'function');
+  assert.equal(typeof mod.buildModbusWriteSingleFrameHex, 'function');
+  assert.equal(typeof mod.scaleSpeedToModbusPercent100, 'function');
+  assert.equal(typeof mod.scaleModbusPercent100ToSpeed, 'function');
+  assert.equal(typeof mod.mapCmdModeToModbusHc, 'function');
+  assert.equal(typeof mod.mapModbusHcToCmdMode, 'function');
+
+  // Read Holding Registers (FC 0x03) start=0, count=9, unitId=1, txId=1:
+  // MBAP: 00 01 00 00 00 06 01 | PDU: 03 00 00 00 09
+  assert.equal(
+    mod.buildModbusReadFrameHex(0x03, 0, 9, 1, 1),
+    '00 01 00 00 00 06 01 03 00 00 00 09'
+  );
+
+  // Read Input Registers (FC 0x04) start=10, count=14 (Status & Cur_t/h/f), unitId=1, txId=2:
+  assert.equal(
+    mod.buildModbusReadFrameHex(0x04, 10, 14, 1, 2),
+    '00 02 00 00 00 06 01 04 00 0a 00 0e'
+  );
+
+  // Write Single Register (FC 0x06) Holding[1] (t_task) = 220 (22.0°C -> 0x00dc), unitId=1, txId=3:
+  assert.equal(
+    mod.buildModbusWriteSingleFrameHex(1, 220, 1, 3),
+    '00 03 00 00 00 06 01 06 00 01 00 dc'
+  );
+
+  // Speed scaling for 8-speed and 10-speed models (% * 100 in HOLDING[0] and INPUT[17])
+  assert.equal(mod.scaleSpeedToModbusPercent100(4, 8), 5000);
+  assert.equal(mod.scaleSpeedToModbusPercent100(8, 8), 10000);
+  assert.equal(mod.scaleModbusPercent100ToSpeed(5000, 8), 4);
+  assert.equal(mod.scaleModbusPercent100ToSpeed(7000, 10), 7);
+
+  // Mode mapping between internal CMD_MODE_* (1=Heat, 2=Cool, 3=Auto, 4=Vent) and JL204c7 HOLDING[7] (0=Vent, 1=Heat, 2=Cool, 3=Auto)
+  assert.equal(mod.mapCmdModeToModbusHc(BREEZART_CONSTANTS.CMD_MODE_VENT), 0);
+  assert.equal(mod.mapCmdModeToModbusHc(BREEZART_CONSTANTS.CMD_MODE_HEAT), 1);
+  assert.equal(mod.mapCmdModeToModbusHc(BREEZART_CONSTANTS.CMD_MODE_COOL), 2);
+  assert.equal(mod.mapCmdModeToModbusHc(BREEZART_CONSTANTS.CMD_MODE_AUTO), 3);
+  assert.equal(mod.mapModbusHcToCmdMode(0), BREEZART_CONSTANTS.CMD_MODE_VENT);
+  assert.equal(mod.mapModbusHcToCmdMode(1), BREEZART_CONSTANTS.CMD_MODE_HEAT);
+  assert.equal(mod.mapModbusHcToCmdMode(2), BREEZART_CONSTANTS.CMD_MODE_COOL);
+  assert.equal(mod.mapModbusHcToCmdMode(3), BREEZART_CONSTANTS.CMD_MODE_AUTO);
+
+  // Check Python integration files contain BreezartModbusClient and protocol selector
+  const rootDir = process.cwd();
+  const constPy = fs.readFileSync(
+    path.join(rootDir, 'custom_components/breezart/const.py'),
+    'utf8'
+  );
+  assert.equal(constPy.includes('DEFAULT_MODBUS_PORT: Final[int] = 502'), true);
+  assert.equal(constPy.includes('PROTOCOL_MODBUS_TCP: Final[str] = "modbus_tcp"'), true);
+
+  const coordPy = fs.readFileSync(
+    path.join(rootDir, 'custom_components/breezart/coordinator.py'),
+    'utf8'
+  );
+  assert.equal(coordPy.includes('class BreezartModbusClient'), true);
+  assert.equal(coordPy.includes('def create_breezart_client'), true);
+});
+
 

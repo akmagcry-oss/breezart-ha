@@ -3,12 +3,14 @@
     "step": {
       "user": {
         "title": "Breezart Ventilation",
-        "description": "Configure connection and model preset for your Breezart controller",
+        "description": "Configure connection and model preset for your Breezart controller (supports Modbus TCP on port 502 for JLV135/JL204c7 and Native TCP on port 1560 for TPD-283U-H)",
         "data": {
           "model": "Unit Model Preset",
+          "protocol": "Connection Protocol",
           "host": "Host (IP address)",
-          "port": "TCP Port",
-          "password": "Remote Access Password"
+          "port": "TCP Port (502 for Modbus TCP, 1560 for Native TCP)",
+          "slave_id": "Modbus Unit / Slave ID (default: 1)",
+          "password": "Remote Access Password (only for Native TCP 1560)"
         }
       }
     },
@@ -24,10 +26,12 @@
   "options": {
     "step": {
       "init": {
-        "title": "Breezart Model & Options",
-        "description": "Select the Breezart model preset to adjust speed ranges, cooling support, and default sensors",
+        "title": "Breezart Model & Protocol Options",
+        "description": "Select the Breezart model preset and transport protocol",
         "data": {
-          "model": "Unit Model Preset"
+          "model": "Unit Model Preset",
+          "protocol": "Connection Protocol",
+          "slave_id": "Modbus Unit / Slave ID"
         }
       }
     }
@@ -42,7 +46,14 @@
         "1000_lux": "Breezart 1000 Lux (Electric, 10 speeds, up to 1000 m³/h)",
         "1000_aqua": "Breezart 1000 Aqua (Water heater + humidifier, up to 1000 m³/h)",
         "2000_lux": "Breezart 2000 Lux (Commercial, up to 2000 m³/h)",
-        "custom": "Custom / Auto-detect (VPr07)"
+        "custom": "Custom / Auto-detect (VPr07 / Modbus)"
+      }
+    },
+    "protocol": {
+      "options": {
+        "auto": "Auto-detect (Modbus TCP 502 / Native TCP 1560)",
+        "modbus_tcp": "Modbus TCP (port 502 — JLV135 / JL204c7 panel)",
+        "native_tcp": "Native TCP (port 1560 — TPD-283U-H panel)"
       }
     }
   },

@@ -5,13 +5,17 @@ import {
   MODEL_PRESETS,
   Language,
   ModelPresetId,
+  ProtocolType,
   HvacModeKey,
+  buildModbusReadFrameHex,
+  buildModbusWriteSingleFrameHex,
   buildProtocolRequest,
   classifyFilterPollution,
-  decToHex,
   getModelPreset,
+  mapCmdModeToModbusHc,
   resolveHvacAction,
   resolveHvacMode,
+  scaleSpeedToModbusPercent100,
   translateEntity,
   translateState,
 } from '../domain/breezart';
@@ -30,9 +34,11 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const preset = getModelPreset(selectedModel);
   const t = I18N_CATALOG[lang];
 
-  // Config Flow form state
+  // Config Flow form state (defaults to user's JLV135 + JL204c7 setup at 192.168.2.38:502)
+  const [protocolInput, setProtocolInput] = useState<ProtocolType>('modbus_tcp');
   const [hostInput, setHostInput] = useState<string>(BREEZART_CONSTANTS.DEFAULT_HOST);
-  const [portInput, setPortInput] = useState<string>(String(BREEZART_CONSTANTS.DEFAULT_PORT));
+  const [portInput, setPortInput] = useState<string>(String(BREEZART_CONSTANTS.DEFAULT_MODBUS_PORT));
+  const [slaveIdInput, setSlaveIdInput] = useState<string>(String(BREEZART_CONSTANTS.DEFAULT_SLAVE_ID));
   const [passwordInput, setPasswordInput] = useState<string>(BREEZART_CONSTANTS.DEFAULT_PASSWORD);
   const [configError, setConfigError] = useState<string | null>(null);
   const [configSavedBanner, setConfigSavedBanner] = useState<string | null>(null);
@@ -57,7 +63,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const [sensorFilter, setSensorFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [sensorSearch, setSensorSearch] = useState<string>('');
   const [lastTxCommand, setLastTxCommand] = useState<string>(
-    buildProtocolRequest(BREEZART_CONSTANTS.REQ_GET_STATE, Number(BREEZART_CONSTANTS.DEFAULT_PASSWORD))
+    `FC=0x03 Read Holding[0..8]: ${buildModbusReadFrameHex(0x03, 0, 9, 1, 1)}`
   );
 
   const clampedTargetTemp = Math.min(
@@ -76,6 +82,23 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const hvacAction = resolveHvacAction(power, unitStateCode, modeCode);
 
   const parsedPass = Number.parseInt(passwordInput, 10) || 21579;
+  const parsedSlaveId = Number.parseInt(slaveIdInput, 10) || 1;
+  const isModbusActive =
+    protocolInput === 'modbus_tcp' ||
+    (protocolInput === 'auto' && Number.parseInt(portInput, 10) === 502);
+
+  const handleProtocolChange = (nextProto: ProtocolType) => {
+    setProtocolInput(nextProto);
+    if (nextProto === 'modbus_tcp') {
+      setPortInput('502');
+      setLastTxCommand(
+        `FC=0x03 Read Holding[0..8]: ${buildModbusReadFrameHex(0x03, 0, 9, parsedSlaveId, 1)}`
+      );
+    } else if (nextProto === 'native_tcp') {
+      setPortInput('1560');
+      setLastTxCommand(buildProtocolRequest(BREEZART_CONSTANTS.REQ_GET_STATE, parsedPass));
+    }
+  };
 
   const handleConfigSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,56 +113,122 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
       setConfigError(t.config.errors.cannot_connect);
       return;
     }
-    if (Number.isNaN(passNum) || passNum < 0 || passNum > BREEZART_CONSTANTS.MAX_UINT16 || passwordInput.trim() === '00000') {
+    if (
+      !isModbusActive &&
+      (Number.isNaN(passNum) ||
+        passNum < 0 ||
+        passNum > BREEZART_CONSTANTS.MAX_UINT16 ||
+        passwordInput.trim() === '00000')
+    ) {
       setConfigError(t.config.errors.invalid_auth);
       return;
     }
 
-    setLastTxCommand(buildProtocolRequest(BREEZART_CONSTANTS.REQ_GET_PROPERTIES, passNum));
-    setConfigSavedBanner(
-      lang === 'ru'
-        ? `Запись создана: Breezart ${preset.name} (${trimmedHost}:${portNum})`
-        : `Entry configured: Breezart ${preset.name} (${trimmedHost}:${portNum})`
-    );
+    const resolvedPort = protocolInput === 'auto' && portNum === 1560 ? 502 : portNum;
+    if (isModbusActive || resolvedPort === 502) {
+      setPortInput(String(resolvedPort));
+      setLastTxCommand(
+        `FC=0x03 Read Holding[0..8]: ${buildModbusReadFrameHex(0x03, 0, 9, parsedSlaveId, 1)}`
+      );
+      setConfigSavedBanner(
+        lang === 'ru'
+          ? `Подключено по Modbus TCP (JLV135 / JL204c7): Breezart ${preset.name} (${trimmedHost}:${resolvedPort}, Slave ID=${parsedSlaveId})`
+          : `Connected via Modbus TCP (JLV135 / JL204c7): Breezart ${preset.name} (${trimmedHost}:${resolvedPort}, Slave ID=${parsedSlaveId})`
+      );
+    } else {
+      setLastTxCommand(buildProtocolRequest(BREEZART_CONSTANTS.REQ_GET_PROPERTIES, passNum));
+      setConfigSavedBanner(
+        lang === 'ru'
+          ? `Подключено по Native TCP: Breezart ${preset.name} (${trimmedHost}:${portNum})`
+          : `Connected via Native TCP: Breezart ${preset.name} (${trimmedHost}:${portNum})`
+      );
+    }
   };
 
   const handlePowerToggle = () => {
     const nextPower = !power;
     setPower(nextPower);
-    setLastTxCommand(
-      buildProtocolRequest(
-        BREEZART_CONSTANTS.REQ_SET_POWER,
-        parsedPass,
-        nextPower ? BREEZART_CONSTANTS.POWER_ON : BREEZART_CONSTANTS.POWER_OFF
-      )
-    );
+    if (isModbusActive) {
+      const regVal = nextPower ? BREEZART_CONSTANTS.POWER_ON : BREEZART_CONSTANTS.POWER_OFF;
+      setLastTxCommand(
+        `FC=0x06 Write Holding[3] (on_off=${regVal}): ${buildModbusWriteSingleFrameHex(
+          BREEZART_CONSTANTS.MODBUS_HR_POWER_STATE,
+          regVal,
+          parsedSlaveId,
+          2
+        )}`
+      );
+    } else {
+      setLastTxCommand(
+        buildProtocolRequest(
+          BREEZART_CONSTANTS.REQ_SET_POWER,
+          parsedPass,
+          nextPower ? BREEZART_CONSTANTS.POWER_ON : BREEZART_CONSTANTS.POWER_OFF
+        )
+      );
+    }
   };
 
   const handleTempChange = (nextTemp: number) => {
     setTargetTemp(nextTemp);
     setSupplyTemp(Number((nextTemp - 0.3).toFixed(1)));
-    setLastTxCommand(
-      buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_TEMP, parsedPass, nextTemp)
-    );
+    if (isModbusActive) {
+      const rawDeci = Math.round(nextTemp * 10);
+      setLastTxCommand(
+        `FC=0x06 Write Holding[1] (t_task=${rawDeci} -> ${nextTemp.toFixed(1)}°C): ${buildModbusWriteSingleFrameHex(
+          BREEZART_CONSTANTS.MODBUS_HR_TEMP_TARGET,
+          rawDeci,
+          parsedSlaveId,
+          3
+        )}`
+      );
+    } else {
+      setLastTxCommand(
+        buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_TEMP, parsedPass, nextTemp)
+      );
+    }
   };
 
   const handleSpeedChange = (nextSpeed: number) => {
     setTargetSpeed(nextSpeed);
-    setLastTxCommand(
-      buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_FAN_SPEED, parsedPass, nextSpeed)
-    );
+    if (isModbusActive) {
+      const rawPct100 = scaleSpeedToModbusPercent100(nextSpeed, preset.speedMax);
+      setLastTxCommand(
+        `FC=0x06 Write Holding[0] (fan_task=${rawPct100} -> ${Math.round(rawPct100 / 100)}%): ${buildModbusWriteSingleFrameHex(
+          BREEZART_CONSTANTS.MODBUS_HR_FAN_SPEED,
+          rawPct100,
+          parsedSlaveId,
+          4
+        )}`
+      );
+    } else {
+      setLastTxCommand(
+        buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_FAN_SPEED, parsedPass, nextSpeed)
+      );
+    }
   };
 
   const handleHvacModeSelect = (nextMode: HvacModeKey) => {
     if (nextMode === 'off') {
       setPower(false);
-      setLastTxCommand(
-        buildProtocolRequest(
-          BREEZART_CONSTANTS.REQ_SET_POWER,
-          parsedPass,
-          BREEZART_CONSTANTS.POWER_OFF
-        )
-      );
+      if (isModbusActive) {
+        setLastTxCommand(
+          `FC=0x06 Write Holding[3] (on_off=0): ${buildModbusWriteSingleFrameHex(
+            BREEZART_CONSTANTS.MODBUS_HR_POWER_STATE,
+            0,
+            parsedSlaveId,
+            5
+          )}`
+        );
+      } else {
+        setLastTxCommand(
+          buildProtocolRequest(
+            BREEZART_CONSTANTS.REQ_SET_POWER,
+            parsedPass,
+            BREEZART_CONSTANTS.POWER_OFF
+          )
+        );
+      }
       return;
     }
     setPower(true);
@@ -159,9 +248,21 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
       cmdCode = BREEZART_CONSTANTS.CMD_MODE_VENT;
     }
     setModeCode(newModeCode);
-    setLastTxCommand(
-      buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_MODE, parsedPass, cmdCode)
-    );
+    if (isModbusActive) {
+      const modbusHc = mapCmdModeToModbusHc(cmdCode);
+      setLastTxCommand(
+        `FC=0x06 Write Holding[7] (mode_hc=${modbusHc}): ${buildModbusWriteSingleFrameHex(
+          BREEZART_CONSTANTS.MODBUS_HR_MODE_HC,
+          modbusHc,
+          parsedSlaveId,
+          6
+        )}`
+      );
+    } else {
+      setLastTxCommand(
+        buildProtocolRequest(BREEZART_CONSTANTS.REQ_SET_MODE, parsedPass, cmdCode)
+      );
+    }
   };
 
   const unitStateKey = power ? 'on' : 'off';
@@ -427,7 +528,28 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                 </select>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label
+                  htmlFor="config-protocol-select"
+                  className="block text-xs font-semibold text-slate-700 mb-1.5"
+                >
+                  {t.config.protocolLabel}
+                </label>
+                <select
+                  id="config-protocol-select"
+                  value={protocolInput}
+                  onChange={(e) => handleProtocolChange(e.target.value as ProtocolType)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none"
+                >
+                  {(['auto', 'modbus_tcp', 'native_tcp'] as ProtocolType[]).map((pId) => (
+                    <option key={pId} value={pId}>
+                      {t.protocols[pId]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3">
                 <div className="col-span-2">
                   <label
                     htmlFor="config-host-input"
@@ -458,6 +580,23 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
                   />
                 </div>
+                <div>
+                  <label
+                    htmlFor="config-slave-input"
+                    className="block text-xs font-semibold text-slate-700 mb-1.5"
+                  >
+                    {t.config.slaveIdLabel}
+                  </label>
+                  <input
+                    id="config-slave-input"
+                    type="number"
+                    min={1}
+                    max={247}
+                    value={slaveIdInput}
+                    onChange={(e) => setSlaveIdInput(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
@@ -472,12 +611,17 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                   type="text"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none"
+                  disabled={isModbusActive}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tabular-nums text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  {lang === 'ru'
-                    ? 'Подсказка: введите 00000 для проверки ошибки invalid_auth (VEPas)'
-                    : 'Tip: enter 00000 to test localized invalid_auth (VEPas) error handling'}
+                  {isModbusActive
+                    ? lang === 'ru'
+                      ? 'Для пульта JLV135 / контроллера JL204c7 (Modbus TCP :502) пароль не требуется'
+                      : 'Password is not required for JLV135 / JL204c7 (Modbus TCP :502)'
+                    : lang === 'ru'
+                      ? 'Подсказка: введите 00000 для проверки ошибки invalid_auth (VEPas)'
+                      : 'Tip: enter 00000 to test localized invalid_auth (VEPas) error handling'}
                 </p>
               </div>
 
@@ -517,8 +661,14 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span>DeviceInfo.model:</span>
-              <span className="font-mono text-slate-800">{preset.name}</span>
+              <span>
+                {lang === 'ru' ? 'Контроллер / Протокол:' : 'Controller / Protocol:'}
+              </span>
+              <span className="font-mono text-slate-800">
+                {isModbusActive
+                  ? `JLV135 + JL204c7 (SW 1.7.14) · Modbus :${portInput}`
+                  : `TPD-283U-H + JL205 · Native TCP :${portInput}`}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>
@@ -593,7 +743,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
                 <p className="text-xs text-slate-500 mt-1 tabular-nums">
                   {preset.airflowM3h > 0
                     ? `${Math.round((clampedSpeed / preset.speedMax) * preset.airflowM3h)} m³/h`
-                    : 'Auto VPr07'}
+                    : 'Auto VPr07 / Modbus'}
                 </p>
               </div>
             </div>
@@ -628,7 +778,8 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
             <div className="mb-5">
               <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1.5">
                 <label htmlFor="target-temp-slider">
-                  {translateEntity('target_temperature', lang)} (VWTmp)
+                  {translateEntity('target_temperature', lang)} (
+                  {isModbusActive ? 'Holding[1] °C×10' : 'VWTmp'})
                 </label>
                 <span className="font-mono tabular-nums">{clampedTargetTemp} °C</span>
               </div>
@@ -648,10 +799,12 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
             <div>
               <div className="flex justify-between text-xs font-semibold text-slate-700 mb-2">
                 <span>
-                  {translateEntity('fan_speed', lang)} (VWSpd · 1..{preset.speedMax})
+                  {translateEntity('fan_speed', lang)} (
+                  {isModbusActive ? 'Holding[0] %×100' : 'VWSpd'} · 1..{preset.speedMax})
                 </span>
                 <span className="font-mono tabular-nums">
-                  {lang === 'ru' ? 'Выбрана скорость' : 'Selected speed'}: {clampedSpeed}
+                  {lang === 'ru' ? 'Выбрана скорость' : 'Selected speed'}: {clampedSpeed} (
+                  {Math.round((clampedSpeed / preset.speedMax) * 100)}%)
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -673,18 +826,22 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
             </div>
           </div>
 
-          {/* Live Native TCP Packet Inspector */}
+          {/* Live Modbus TCP / Native TCP Packet Inspector */}
           <div className="mt-6 pt-4 border-t border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
               <span className="text-slate-500">
-                TCP {hostInput}:{portInput} TX:
+                {isModbusActive ? 'Modbus TCP' : 'Native TCP'} {hostInput}:{portInput} TX:
               </span>
               <code className="bg-slate-900 text-emerald-400 px-2.5 py-1 rounded">
                 {lastTxCommand}
               </code>
-              <span className="text-slate-500">VPr07 RX:</span>
+              <span className="text-slate-500">
+                {isModbusActive ? 'JL204c7 RX:' : 'VPr07 RX:'}
+              </span>
               <code className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded">
-                VPr07_{vprTemprWord}_{vprSpeedWord}_0000_{vprMiscWord}_0107_0000_0806
+                {isModbusActive
+                  ? `HR[0]=${scaleSpeedToModbusPercent100(clampedSpeed, preset.speedMax)} HR[1]=${clampedTargetTemp * 10} HR[3]=${power ? 1 : 0} IR[13]=${Math.round(supplyTemp * 10)}`
+                  : `VPr07_${vprTemprWord}_${vprSpeedWord}_0000_${vprMiscWord}_0107_0000_0806`}
               </code>
             </div>
           </div>

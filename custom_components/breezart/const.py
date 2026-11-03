@@ -11,13 +11,29 @@ CONFIG_FLOW_VERSION: Final[int] = 1
 
 # Configuration & hass.data keys
 CONF_MODEL: Final[str] = "model"
+CONF_PROTOCOL: Final[str] = "protocol"
+CONF_SLAVE_ID: Final[str] = "slave_id"
 DATA_CLIENT: Final[str] = "client"
 DATA_COORDINATOR: Final[str] = "coordinator"
 DATA_MODEL: Final[str] = "model"
+DATA_PROTOCOL: Final[str] = "protocol"
 
-# Breezart TCP connection defaults
+# Supported transport protocols
+PROTOCOL_AUTO: Final[str] = "auto"
+PROTOCOL_MODBUS_TCP: Final[str] = "modbus_tcp"
+PROTOCOL_NATIVE_TCP: Final[str] = "native_tcp"
+DEFAULT_PROTOCOL: Final[str] = PROTOCOL_AUTO
+PROTOCOL_OPTIONS: Final[list[str]] = [
+    PROTOCOL_AUTO,
+    PROTOCOL_MODBUS_TCP,
+    PROTOCOL_NATIVE_TCP,
+]
+
+# Breezart TCP & Modbus TCP connection defaults
 DEFAULT_HOST: Final[str] = "192.168.1.121"
 DEFAULT_PORT: Final[int] = 1560
+DEFAULT_MODBUS_PORT: Final[int] = 502
+DEFAULT_SLAVE_ID: Final[int] = 1
 DEFAULT_PASSWORD: Final[str] = "21579"
 DEFAULT_TIMEOUT: Final[int] = 5
 DEFAULT_SCAN_INTERVAL: Final[int] = 30
@@ -25,6 +41,7 @@ STATE_UPDATE_INTERVAL: Final[int] = 3
 SENSORS_UPDATE_INTERVAL: Final[int] = 30
 OPTIMISTIC_HOLD_SECONDS: Final[int] = 6
 READ_DELAY_SECONDS: Final[float] = 0.03
+MODBUS_READ_DELAY_SECONDS: Final[float] = 0.06
 READ_BUFFER_SIZE: Final[int] = 4096
 
 # Config flow error & abort keys
@@ -303,6 +320,111 @@ FILTER_STATUS_EXCELLENT: Final[str] = "excellent"
 FILTER_STATUS_GOOD: Final[str] = "good"
 FILTER_STATUS_REPLACE_SOON: Final[str] = "replace_soon"
 FILTER_STATUS_CLOGGED: Final[str] = "clogged"
+
+# Modbus TCP (MBAP + PDU) constants for JLV135 / JL204c7 (v1.7.x)
+MODBUS_PROTOCOL_ID: Final[int] = 0
+MODBUS_MBAP_HEADER_LEN: Final[int] = 7
+MODBUS_READ_PDU_LEN: Final[int] = 6
+MODBUS_WRITE_SINGLE_PDU_LEN: Final[int] = 6
+MODBUS_FC_READ_HOLDING: Final[int] = 0x03
+MODBUS_FC_READ_INPUT: Final[int] = 0x04
+MODBUS_FC_WRITE_SINGLE: Final[int] = 0x06
+MODBUS_FC_WRITE_MULTIPLE: Final[int] = 0x10
+MODBUS_EXCEPTION_MASK: Final[int] = 0x80
+
+MODBUS_PERCENT_MULTIPLIER: Final[float] = 100.0
+MODBUS_MAX_PERCENT_RAW: Final[int] = 10000
+MODBUS_KW_TO_W_MULTIPLIER: Final[float] = 10.0
+MODBUS_INVALID_VALUES: Final[frozenset[int]] = frozenset({0x7FFF, 0x8000, 0xFB07, 0xFFFF})
+
+# JL204c7 Holding Registers (FC 0x03 / 0x06)
+MODBUS_HR_FAN_SPEED: Final[int] = 0        # fan_task (% x 100, UINT16)
+MODBUS_HR_TEMP_TARGET: Final[int] = 1      # t_task (°C x 10, SINT16)
+MODBUS_HR_HUMID_TARGET: Final[int] = 2     # h_task (% x 10, SINT16)
+MODBUS_HR_POWER_STATE: Final[int] = 3      # on_off (0=Off, 1=Working, 2=Standby)
+MODBUS_HR_MODE_HC: Final[int] = 7          # mode_hc (0=Vent/Summer, 1=Heat/Winter, 2=Cool/Summer, 3=Auto)
+MODBUS_HR_BLOCK_START: Final[int] = 0
+MODBUS_HR_BLOCK_COUNT: Final[int] = 9      # Reads HOLDING[0..8] in one request
+
+# JL204c7 Input Registers (FC 0x04)
+MODBUS_IR_STATUS_BLOCK_START: Final[int] = 10
+MODBUS_IR_STATUS_BLOCK_COUNT: Final[int] = 14  # Reads INPUT[10..23]
+MODBUS_IR_CUR_MODE: Final[int] = 10            # Cur_mode (0=Off, 1=Working, 2=Standby)
+MODBUS_IR_STATUS_LOW: Final[int] = 11          # Status low 16 bits
+MODBUS_IR_STATUS_HIGH: Final[int] = 12         # Status high 16 bits
+MODBUS_IR_CUR_TEMP: Final[int] = 13            # Cur_t (°C x 10, IO_DATA: 13=val, 14=status)
+MODBUS_IR_CUR_HUMID: Final[int] = 15           # Cur_h (% x 10, IO_DATA: 15=val, 16=status)
+MODBUS_IR_CUR_FAN: Final[int] = 17             # Cur_f (% x 100, IO_DATA: 17=val, 18=status)
+MODBUS_IR_ERRORS_LOW: Final[int] = 19          # Errors low 16 bits (Alarms bitmap)
+MODBUS_IR_ERRORS_HIGH: Final[int] = 20
+MODBUS_IR_WARNINGS_LOW: Final[int] = 21        # Warnings low 16 bits (Alarms bitmap)
+MODBUS_IR_WARNINGS_HIGH: Final[int] = 22
+
+MODBUS_IR_SENSORS_BLOCK_START: Final[int] = 50
+MODBUS_IR_SENSORS_BLOCK_COUNT: Final[int] = 22  # Reads INPUT[50..71]
+MODBUS_IR_TEMP_SUPPLY: Final[int] = 50          # Pu_out_air_t (°C x 10, IO_DATA: 50..51)
+MODBUS_IR_HUMID_SUPPLY: Final[int] = 52         # Pu_out_air_h (% x 10, IO_DATA: 52..53)
+MODBUS_IR_TEMP_ROOM: Final[int] = 54            # Room_air_t (°C x 10, IO_DATA: 54..55)
+MODBUS_IR_HUMID_ROOM: Final[int] = 56           # Room_air_h (% x 10, IO_DATA: 56..57)
+MODBUS_IR_TEMP_OUTDOOR: Final[int] = 58         # Ext_air_t (°C x 10, IO_DATA: 58..59)
+MODBUS_IR_HUMID_OUTDOOR: Final[int] = 60        # Ext_air_h (% x 10, IO_DATA: 60..61)
+MODBUS_IR_TEMP_WATER: Final[int] = 62           # Hot_water_t (°C x 10, IO_DATA: 62..63)
+MODBUS_IR_MIN_TEMP_TASK: Final[int] = 70        # Min_task (°C x 10, UINT16)
+MODBUS_IR_MAX_TEMP_TASK: Final[int] = 71        # Max_task (°C x 10, UINT16)
+
+MODBUS_IR_FAN_BLOCK_START: Final[int] = 10001
+MODBUS_IR_FAN_BLOCK_COUNT: Final[int] = 4       # Reads INPUT[10001..10004]
+MODBUS_IR_FAN_WORK: Final[int] = 10001          # Fan0_cur_work (% x 100)
+MODBUS_IR_FAN_POWER: Final[int] = 10004         # Fan0_power (kW x 100 -> * 10 = W)
+
+MODBUS_IR_FILTER1_POLLUTION: Final[int] = 12005  # Filter0_cur_zagryaz (% x 100)
+MODBUS_IR_FILTER2_POLLUTION: Final[int] = 12205  # Filter1_cur_zagryaz (% x 100)
+
+MODBUS_IR_FAST_BLOCK_START: Final[int] = 64000
+MODBUS_IR_FAST_BLOCK_COUNT: Final[int] = 8      # Reads INPUT[64000..64007]
+
+MODBUS_IR_INFO_BLOCK_START: Final[int] = 65000
+MODBUS_IR_INFO_BLOCK_COUNT: Final[int] = 15     # Reads INPUT[65000..65014]
+MODBUS_IR_HW_SIGNATURE: Final[int] = 65000      # Sign_hard_ID (e.g. 204 for JL204)
+MODBUS_IR_SW_ID: Final[int] = 65011             # Sign_soft_id
+MODBUS_IR_SW_VERSION: Final[int] = 65012        # Sign_soft_vers
+MODBUS_IR_PROJ_VERSION: Final[int] = 65014      # Sign_proj_vers
+
+# JL204c7 Status bit positions (INPUT[11])
+MODBUS_STATUS_BIT_POWER: Final[int] = 0
+MODBUS_STATUS_BIT_TRANSITION: Final[int] = 1
+MODBUS_STATUS_BIT_WINTER: Final[int] = 2
+MODBUS_STATUS_BIT_WARN: Final[int] = 3
+MODBUS_STATUS_BIT_FATAL: Final[int] = 4
+MODBUS_STATUS_BIT_VENT: Final[int] = 5
+MODBUS_STATUS_BIT_HEATING: Final[int] = 7
+MODBUS_STATUS_BIT_COOLING: Final[int] = 8
+MODBUS_STATUS_BIT_OVERHEAT_BLOW: Final[int] = 15
+
+# JL204c7 Alarms bit positions (INPUT[19] Errors & INPUT[21] Warnings)
+MODBUS_ALARM_BIT_FREEZE: Final[int] = 4
+MODBUS_ALARM_BIT_OVERHEAT: Final[int] = 5
+MODBUS_ALARM_BIT_FILTER: Final[int] = 9
+
+# JL204c7 HOLDING[7] (mode_hc) values & mapping to/from internal CMD_MODE_*
+MODBUS_HC_VENT: Final[int] = 0
+MODBUS_HC_HEAT: Final[int] = 1
+MODBUS_HC_COOL: Final[int] = 2
+MODBUS_HC_AUTO: Final[int] = 3
+
+MODBUS_HC_TO_CMD_MODE: Final[dict[int, int]] = {
+    MODBUS_HC_VENT: CMD_MODE_VENT,
+    MODBUS_HC_HEAT: CMD_MODE_HEAT,
+    MODBUS_HC_COOL: CMD_MODE_COOL,
+    MODBUS_HC_AUTO: CMD_MODE_AUTO,
+}
+
+CMD_MODE_TO_MODBUS_HC: Final[dict[int, int]] = {
+    CMD_MODE_VENT: MODBUS_HC_VENT,
+    CMD_MODE_HEAT: MODBUS_HC_HEAT,
+    CMD_MODE_COOL: MODBUS_HC_COOL,
+    CMD_MODE_AUTO: MODBUS_HC_AUTO,
+}
 
 # Model preset identifiers
 MODEL_400_LUX: Final[str] = "400_lux"
@@ -588,7 +710,12 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             MODEL_1000_LUX: "Breezart 1000 Lux (Электрический, 10 скоростей, до 1000 м³/ч)",
             MODEL_1000_AQUA: "Breezart 1000 Aqua (Водяной + увлажнитель, до 1000 м³/ч)",
             MODEL_2000_LUX: "Breezart 2000 Lux (Промышленный, до 2000 м³/ч)",
-            MODEL_CUSTOM: "Пользовательский / Автоопределение (VPr07)",
+            MODEL_CUSTOM: "Пользовательский / Автоопределение (VPr07 / Modbus)",
+        },
+        "protocols": {
+            PROTOCOL_AUTO: "Автоопределение (Modbus TCP 502 / Native TCP 1560)",
+            PROTOCOL_MODBUS_TCP: "Modbus TCP (порт 502 — пульт JLV135 / JL204c7)",
+            PROTOCOL_NATIVE_TCP: "Native TCP (порт 1560 — пульт TPD-283U-H)",
         },
     },
     "en": {
@@ -676,7 +803,12 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             MODEL_1000_LUX: "Breezart 1000 Lux (Electric, 10 speeds, up to 1000 m³/h)",
             MODEL_1000_AQUA: "Breezart 1000 Aqua (Water heater + humidifier, up to 1000 m³/h)",
             MODEL_2000_LUX: "Breezart 2000 Lux (Commercial, up to 2000 m³/h)",
-            MODEL_CUSTOM: "Custom / Auto-detect (VPr07)",
+            MODEL_CUSTOM: "Custom / Auto-detect (VPr07 / Modbus)",
+        },
+        "protocols": {
+            PROTOCOL_AUTO: "Auto-detect (Modbus TCP 502 / Native TCP 1560)",
+            PROTOCOL_MODBUS_TCP: "Modbus TCP (port 502 — JLV135 / JL204c7 panel)",
+            PROTOCOL_NATIVE_TCP: "Native TCP (port 1560 — TPD-283U-H panel)",
         },
     },
 }

@@ -5,6 +5,8 @@
 
 export type Language = 'ru' | 'en';
 
+export type ProtocolType = 'auto' | 'modbus_tcp' | 'native_tcp';
+
 export type ModelPresetId =
   | '400_lux'
   | '550_lux'
@@ -56,14 +58,19 @@ export const BREEZART_CONSTANTS = {
   MANUFACTURER: 'Breezart',
   CONFIG_FLOW_VERSION: 1,
   CONF_MODEL: 'model',
-  DEFAULT_HOST: '192.168.1.121',
+  CONF_PROTOCOL: 'protocol',
+  CONF_SLAVE_ID: 'slave_id',
+  DEFAULT_HOST: '192.168.2.38',
   DEFAULT_PORT: 1560,
+  DEFAULT_MODBUS_PORT: 502,
+  DEFAULT_SLAVE_ID: 1,
   DEFAULT_PASSWORD: '21579',
   DEFAULT_TIMEOUT: 5,
   STATE_UPDATE_INTERVAL: 3,
   SENSORS_UPDATE_INTERVAL: 30,
   OPTIMISTIC_HOLD_SECONDS: 6,
   READ_DELAY_SECONDS: 0.03,
+  MODBUS_READ_DELAY_SECONDS: 0.06,
   READ_BUFFER_SIZE: 4096,
   DELIMITER: '_',
   MAX_UINT16: 0xffff,
@@ -73,6 +80,19 @@ export const BREEZART_CONSTANTS = {
   NO_DATA_HEX: 'fb07',
   NO_DATA_BYTE: 255,
   TEMP_DIVISOR: 10.0,
+  MODBUS_FC_READ_HOLDING: 0x03,
+  MODBUS_FC_READ_INPUT: 0x04,
+  MODBUS_FC_WRITE_SINGLE: 0x06,
+  MODBUS_HR_FAN_SPEED: 0,
+  MODBUS_HR_TEMP_TARGET: 1,
+  MODBUS_HR_HUMID_TARGET: 2,
+  MODBUS_HR_POWER_STATE: 3,
+  MODBUS_HR_MODE_HC: 7,
+  MODBUS_IR_STATUS_BLOCK_START: 10,
+  MODBUS_IR_SENSORS_BLOCK_START: 50,
+  MODBUS_IR_FAN_POWER: 10004,
+  MODBUS_IR_FILTER1_POLLUTION: 12005,
+  MODBUS_IR_INFO_BLOCK_START: 65000,
   REQ_GET_PROPERTIES: 'VPr07',
   REQ_GET_STATE: 'VSt07',
   REQ_GET_SENSORS: 'VSens',
@@ -97,6 +117,10 @@ export const BREEZART_CONSTANTS = {
   CMD_MODE_COOL: 2,
   CMD_MODE_AUTO: 3,
   CMD_MODE_VENT: 4,
+  MODBUS_HC_VENT: 0,
+  MODBUS_HC_HEAT: 1,
+  MODBUS_HC_COOL: 2,
+  MODBUS_HC_AUTO: 3,
   FILTER_POLLUTION_EXCELLENT_MAX: 30,
   FILTER_POLLUTION_GOOD_MAX: 60,
   FILTER_POLLUTION_REPLACE_MAX: 85,
@@ -114,13 +138,43 @@ export const EXTRACTED_CONSTANTS_CATALOG: readonly ProtocolConstantEntry[] = [
     },
   },
   {
-    name: 'DEFAULT_HOST / DEFAULT_PORT / DEFAULT_PASSWORD',
-    value: '"192.168.1.121" : 1560 (pwd: "21579")',
+    name: 'PROTOCOL_AUTO / PROTOCOL_MODBUS_TCP / PROTOCOL_NATIVE_TCP',
+    value: '"auto" | "modbus_tcp" (:502) | "native_tcp" (:1560)',
+    category: 'network',
+    usedIn: ['const.py', 'config_flow.py', 'coordinator.py', '__init__.py'],
+    description: {
+      ru: 'Поддержка Modbus TCP (порт 502, пульт JLV135 / контроллер JL204c7) и Native TCP (порт 1560, TPD-283U-H) с автоопределением',
+      en: 'Dual-protocol support for Modbus TCP (port 502, JLV135 / JL204c7) and Native TCP (port 1560, TPD-283U-H) with auto-detection',
+    },
+  },
+  {
+    name: 'MODBUS_HR_FAN_SPEED..MODBUS_HR_MODE_HC (Holding[0..8])',
+    value: 'HR[0]=fan(%×100), HR[1]=temp(°C×10), HR[3]=on_off, HR[7]=mode_hc',
+    category: 'protocol',
+    usedIn: ['const.py', 'coordinator.py', 'test_connection.py'],
+    description: {
+      ru: 'Регистры хранения JL204c7 (ПО 1.7.x): скорость вентилятора, уставка температуры, питание и режим Зима/Лето/Авто',
+      en: 'JL204c7 (SW 1.7.x) Holding Registers: fan speed (%×100), target temperature (°C×10), power state, and Winter/Summer/Auto mode',
+    },
+  },
+  {
+    name: 'MODBUS_IR_STATUS_BLOCK / SENSORS_BLOCK (Input[10..71, 10004, 12005])',
+    value: 'IR[10..23] Status & Cur_t/h/f, IR[50..63] IO_DATA Sensors',
+    category: 'protocol',
+    usedIn: ['const.py', 'coordinator.py', 'test_connection.py'],
+    description: {
+      ru: 'Входные регистры JL204c7: статус установки, точка регулирования (Cur_t/h/f), датчики воздуха/воды (IO_DATA), мощность и фильтры',
+      en: 'JL204c7 Input Registers: unit status bitmask, regulation point (Cur_t/h/f), air/water IO_DATA sensors, power, and filter pollution',
+    },
+  },
+  {
+    name: 'DEFAULT_HOST / DEFAULT_PORT / DEFAULT_MODBUS_PORT',
+    value: '502 (Modbus TCP) / 1560 (Native TCP, pwd: "21579")',
     category: 'network',
     usedIn: ['config_flow.py', 'test_connection.py'],
     description: {
-      ru: 'Параметры TCP-подключения по умолчанию (ранее были захардкожены в config_flow.py)',
-      en: 'Default TCP connection parameters (previously hardcoded inside config_flow.py)',
+      ru: 'Параметры TCP/Modbus-подключения по умолчанию (Slave ID = 1 для JLV135)',
+      en: 'Default TCP/Modbus connection parameters (Slave ID = 1 for JLV135)',
     },
   },
   {
@@ -421,6 +475,76 @@ export function buildProtocolRequest(
   return parts.join(BREEZART_CONSTANTS.DELIMITER);
 }
 
+function formatByteHex(byte: number): string {
+  return (byte & 0xff).toString(16).padStart(2, '0');
+}
+
+function formatWordHex(word: number): string {
+  const u16 = word & 0xffff;
+  return `${formatByteHex((u16 >> 8) & 0xff)} ${formatByteHex(u16 & 0xff)}`;
+}
+
+export function buildModbusReadFrameHex(
+  funcCode: number,
+  startAddr: number,
+  count: number,
+  unitId: number = 1,
+  txId: number = 1
+): string {
+  return [
+    formatWordHex(txId),
+    formatWordHex(0), // Protocol ID = 0
+    formatWordHex(6), // Length = 6 bytes (UnitID + FC + StartAddr(2) + Count(2))
+    formatByteHex(unitId),
+    formatByteHex(funcCode),
+    formatWordHex(startAddr),
+    formatWordHex(count),
+  ].join(' ');
+}
+
+export function buildModbusWriteSingleFrameHex(
+  regAddr: number,
+  value: number,
+  unitId: number = 1,
+  txId: number = 1
+): string {
+  return [
+    formatWordHex(txId),
+    formatWordHex(0), // Protocol ID = 0
+    formatWordHex(6), // Length = 6 bytes (UnitID + FC + RegAddr(2) + Value(2))
+    formatByteHex(unitId),
+    formatByteHex(BREEZART_CONSTANTS.MODBUS_FC_WRITE_SINGLE),
+    formatWordHex(regAddr),
+    formatWordHex(value & 0xffff),
+  ].join(' ');
+}
+
+export function scaleSpeedToModbusPercent100(speed: number, speedMax: number): number {
+  const clamped = Math.max(1, Math.min(speedMax, Math.round(speed)));
+  return Math.round((clamped / speedMax) * 10000);
+}
+
+export function scaleModbusPercent100ToSpeed(rawPct100: number, speedMax: number): number {
+  if (rawPct100 <= 0) return 0;
+  return Math.max(1, Math.min(speedMax, Math.round((rawPct100 / 10000) * speedMax)));
+}
+
+export function mapCmdModeToModbusHc(cmdMode: number): number {
+  if (cmdMode === BREEZART_CONSTANTS.CMD_MODE_VENT) return BREEZART_CONSTANTS.MODBUS_HC_VENT;
+  if (cmdMode === BREEZART_CONSTANTS.CMD_MODE_HEAT) return BREEZART_CONSTANTS.MODBUS_HC_HEAT;
+  if (cmdMode === BREEZART_CONSTANTS.CMD_MODE_COOL) return BREEZART_CONSTANTS.MODBUS_HC_COOL;
+  if (cmdMode === BREEZART_CONSTANTS.CMD_MODE_AUTO) return BREEZART_CONSTANTS.MODBUS_HC_AUTO;
+  return BREEZART_CONSTANTS.MODBUS_HC_HEAT;
+}
+
+export function mapModbusHcToCmdMode(modbusHc: number): number {
+  if (modbusHc === BREEZART_CONSTANTS.MODBUS_HC_VENT) return BREEZART_CONSTANTS.CMD_MODE_VENT;
+  if (modbusHc === BREEZART_CONSTANTS.MODBUS_HC_HEAT) return BREEZART_CONSTANTS.CMD_MODE_HEAT;
+  if (modbusHc === BREEZART_CONSTANTS.MODBUS_HC_COOL) return BREEZART_CONSTANTS.CMD_MODE_COOL;
+  if (modbusHc === BREEZART_CONSTANTS.MODBUS_HC_AUTO) return BREEZART_CONSTANTS.CMD_MODE_AUTO;
+  return BREEZART_CONSTANTS.CMD_MODE_HEAT;
+}
+
 export function classifyFilterPollution(pollution: number | null | undefined): FilterStatusKey {
   if (pollution === null || pollution === undefined || Number.isNaN(pollution)) {
     return 'no_data';
@@ -484,12 +608,15 @@ export interface TranslationCatalog {
   color_ind: Record<string, string>;
   filter_status: Record<FilterStatusKey, string>;
   models: Record<ModelPresetId, string>;
+  protocols: Record<ProtocolType, string>;
   config: {
     title: string;
     description: string;
     modelLabel: string;
+    protocolLabel: string;
     hostLabel: string;
     portLabel: string;
+    slaveIdLabel: string;
     passwordLabel: string;
     submitButton: string;
     errors: {
@@ -586,15 +713,22 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       '1000_lux': 'Breezart 1000 Lux (Электрический, 10 скоростей, до 1000 м³/ч)',
       '1000_aqua': 'Breezart 1000 Aqua (Водяной + увлажнитель, до 1000 м³/ч)',
       '2000_lux': 'Breezart 2000 Lux (Промышленный, до 2000 м³/ч)',
-      custom: 'Пользовательский / Автоопределение (VPr07)',
+      custom: 'Пользовательский / Автоопределение (VPr07 / Modbus)',
+    },
+    protocols: {
+      auto: 'Автоопределение (Modbus TCP 502 / Native TCP 1560)',
+      modbus_tcp: 'Modbus TCP (порт 502 — пульт JLV135 / JL204c7)',
+      native_tcp: 'Native TCP (порт 1560 — пульт TPD-283U-H)',
     },
     config: {
       title: 'Вентиляция Breezart',
-      description: 'Настройка подключения и выбор модели установки Breezart',
+      description: 'Настройка подключения и выбор модели установки (Modbus TCP :502 для JLV135 / JL204c7 и Native TCP :1560 для TPD-283U-H)',
       modelLabel: 'Модель установки (преднастройка)',
+      protocolLabel: 'Протокол подключения',
       hostLabel: 'Хост (IP-адрес)',
       portLabel: 'TCP-порт',
-      passwordLabel: 'Пароль удалённого доступа',
+      slaveIdLabel: 'Slave ID (Modbus)',
+      passwordLabel: 'Пароль удалённого доступа (только для Native TCP 1560)',
       submitButton: 'Проверить подключение и применить',
       errors: {
         cannot_connect: 'Не удалось подключиться к контроллеру Breezart',
@@ -688,15 +822,22 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       '1000_lux': 'Breezart 1000 Lux (Electric, 10 speeds, up to 1000 m³/h)',
       '1000_aqua': 'Breezart 1000 Aqua (Water heater + humidifier, up to 1000 m³/h)',
       '2000_lux': 'Breezart 2000 Lux (Commercial, up to 2000 m³/h)',
-      custom: 'Custom / Auto-detect (VPr07)',
+      custom: 'Custom / Auto-detect (VPr07 / Modbus)',
+    },
+    protocols: {
+      auto: 'Auto-detect (Modbus TCP 502 / Native TCP 1560)',
+      modbus_tcp: 'Modbus TCP (port 502 — JLV135 / JL204c7 panel)',
+      native_tcp: 'Native TCP (port 1560 — TPD-283U-H panel)',
     },
     config: {
       title: 'Breezart Ventilation',
-      description: 'Configure connection and model preset for your Breezart controller',
+      description: 'Configure connection and model preset (supports Modbus TCP :502 for JLV135 / JL204c7 and Native TCP :1560 for TPD-283U-H)',
       modelLabel: 'Unit Model Preset',
+      protocolLabel: 'Connection Protocol',
       hostLabel: 'Host (IP address)',
       portLabel: 'TCP Port',
-      passwordLabel: 'Remote Access Password',
+      slaveIdLabel: 'Slave ID (Modbus)',
+      passwordLabel: 'Remote Access Password (only for Native TCP 1560)',
       submitButton: 'Test Connection & Apply Preset',
       errors: {
         cannot_connect: 'Failed to connect to the Breezart controller',
@@ -719,3 +860,4 @@ export function translateState(
   const dict = I18N_CATALOG[lang][category] as Record<string, string>;
   return dict[key] ?? key;
 }
+
