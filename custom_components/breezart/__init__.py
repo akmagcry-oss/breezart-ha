@@ -18,7 +18,6 @@ from .const import (
     DATA_MODEL,
     DATA_PROTOCOL,
     DATA_RELOAD_SNAPSHOT,
-    DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NOTIFY_SERVICE,
     DEFAULT_PASSWORD,
@@ -27,10 +26,8 @@ from .const import (
     DEFAULT_SLAVE_ID,
     DOMAIN,
     NOTIFICATION_SETTING_KEYS,
-    PROTOCOL_MODBUS_TCP,
-    PROTOCOL_NATIVE_TCP,
 )
-from .coordinator import BreezartDataCoordinator, create_breezart_client
+from .coordinator import BreezartDataCoordinator, create_breezart_client, resolve_port
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
@@ -48,19 +45,6 @@ def _reload_snapshot(entry: ConfigEntry) -> dict:
     """
     merged = {**entry.data, **entry.options}
     return {k: v for k, v in merged.items() if k not in NOTIFICATION_SETTING_KEYS}
-
-
-def _resolve_port(protocol: str, port: int) -> int:
-    """Swap the stored port to the protocol's default when it still holds the other one's.
-
-    The options flow can switch the protocol but not the port, so an entry created on
-    1560 (native) and switched to Modbus would otherwise connect Modbus to 1560.
-    """
-    if protocol == PROTOCOL_MODBUS_TCP and port == DEFAULT_PORT:
-        return DEFAULT_MODBUS_PORT
-    if protocol == PROTOCOL_NATIVE_TCP and port == DEFAULT_MODBUS_PORT:
-        return DEFAULT_PORT
-    return port
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -97,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     # The options flow stores the port it verified; older entries only have it in data.
-    port = _resolve_port(
+    port = resolve_port(
         protocol,
         int(entry.options.get(CONF_PORT, entry.data.get(CONF_PORT, DEFAULT_PORT))),
     )
