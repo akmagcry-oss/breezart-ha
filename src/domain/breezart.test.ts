@@ -251,6 +251,71 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.1 
       `${relIconPath} must match uploaded Breezart icon`
     );
   }
+
+  // 6) README cleanup & separated documentation in docs/
+  for (const docRelPath of [
+    'docs/README.md',
+    'docs/sensors.md',
+    'docs/protocols.md',
+    'docs/structure.md',
+  ]) {
+    const docFullPath = path.join(rootDir, docRelPath);
+    assert.equal(fs.existsSync(docFullPath), true, `${docRelPath} must exist`);
+  }
+
+  const docsSensors = fs.readFileSync(path.join(rootDir, 'docs/sensors.md'), 'utf8');
+  assert.equal(docsSensors.includes('Отличное / Excellent'), true);
+  assert.equal(docsSensors.includes('switch.breezart_notify_overheat'), true);
+
+  const docsProtocols = fs.readFileSync(path.join(rootDir, 'docs/protocols.md'), 'utf8');
+  assert.equal(docsProtocols.includes('HOLDING[0]'), true);
+  assert.equal(docsProtocols.includes('VPr07'), true);
+
+  const docsStructure = fs.readFileSync(path.join(rootDir, 'docs/structure.md'), 'utf8');
+  assert.equal(docsStructure.includes('custom_components/breezart/'), true);
+
+  // README must NOT have logo image, HACS creating-links note, or duplicated Особенности/Возможности
+  assert.equal(readme.includes('![Breezart]'), false, 'Breezart logo must be removed from README.md');
+  assert.equal(
+    readme.includes('Если нужно подробнее про формир'),
+    false,
+    'HACS link formation note must be removed from README.md'
+  );
+  assert.equal(readme.includes('Особенности'), false, 'Особенности must be merged into Возможности');
+  assert.equal(
+    readme.includes('custom_components/breezart/\n├──'),
+    false,
+    'Project structure block must be moved out of README.md into docs/'
+  );
+  assert.equal(
+    readme.includes('HOLDING[0]'),
+    false,
+    'Protocols block must be moved out of README.md into docs/'
+  );
+
+  // Official links to Breezart and Home Assistant in description
+  assert.equal(readme.includes('https://breezart.ru'), true, 'README must link to official Breezart site');
+  assert.equal(
+    readme.includes('https://www.home-assistant.io'),
+    true,
+    'README must link to official Home Assistant site'
+  );
+  assert.equal(
+    readme.toLowerCase().includes('неофициальная интеграция'),
+    true,
+    'README must state that this is an unofficial integration'
+  );
+
+  // Exact section order: 1) Title/Description -> 2) Возможности -> 3) Совместимость -> 4) Установка и настройка -> 5) Документация
+  const idxFeatures = readme.indexOf('## Возможности');
+  const idxCompat = readme.indexOf('## Совместимость');
+  const idxInstall = readme.indexOf('## Установка и настройка');
+  const idxDocs = readme.indexOf('## Документация');
+  assert.equal(idxFeatures > 0, true, 'README must have ## Возможности');
+  assert.equal(idxCompat > idxFeatures, true, '## Совместимость must follow ## Возможности');
+  assert.equal(idxInstall > idxCompat, true, '## Установка и настройка must follow ## Совместимость');
+  assert.equal(idxDocs > idxInstall, true, '## Документация must be at the end after ## Установка и настройка');
+  assert.equal(readme.includes('docs/'), true, 'README must link to docs/');
 });
 
 test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, freeze hazard detection, and 7 individual notification switches with deduplication & throttle (v1.2.1)', async () => {
