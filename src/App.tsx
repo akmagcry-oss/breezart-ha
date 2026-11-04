@@ -36,16 +36,21 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* 3-Zone Top Bar Contract */}
       <header className="flex items-center justify-between gap-8 px-6 py-4 bg-white border-b border-slate-200">
-        {/* Zone 1: Single text element wordmark */}
+        {/* Zone 1: Brand icon + wordmark */}
         <a
           href="#top"
           onClick={(e) => {
             e.preventDefault();
             setActiveTab('simulator');
           }}
-          className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+          className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
         >
-          Breezart HA Integration
+          <img
+            src="/assets/aistudio/image_a4906a24.png"
+            alt="Breezart"
+            className="h-7 w-7 object-contain rounded"
+          />
+          <span>Breezart HA Integration</span>
         </a>
 
         {/* Zone 2: 4 concise single-line navigation links */}
@@ -92,21 +97,27 @@ export default function App() {
       {/* Workspace Context Bar */}
       <div className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">
-              {lang === 'ru'
-                ? 'Интеграция вентиляции Breezart для Home Assistant (v1.2.1)'
-                : 'Breezart Ventilation Home Assistant Integration (v1.2.1)'}
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              <a
-                href="https://github.com/akmagcry-oss/breezart-ha"
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-slate-700 hover:underline"
-              >
-                github.com/akmagcry-oss/breezart-ha
-              </a>
+          <div className="flex items-center gap-3.5">
+            <img
+              src="/assets/aistudio/image_a4906a24.png"
+              alt="Breezart Integration Icon"
+              className="h-11 w-11 object-contain rounded-lg border border-slate-200 bg-white p-1 shrink-0"
+            />
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">
+                {lang === 'ru'
+                  ? 'Интеграция вентиляции Breezart для Home Assistant (v1.2.1)'
+                  : 'Breezart Ventilation Home Assistant Integration (v1.2.1)'}
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                <a
+                  href="https://github.com/akmagcry-oss/breezart-ha"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-slate-700 hover:underline"
+                >
+                  github.com/akmagcry-oss/breezart-ha
+                </a>
               <span className="mx-2" aria-hidden="true">
                 ·
               </span>
@@ -126,12 +137,13 @@ export default function App() {
               <span className="mx-2" aria-hidden="true">
                 ·
               </span>
-              <span>
-                {lang === 'ru'
-                  ? '3) Полная интернационализация RU / EN · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Push-уведомления на телефон'
-                  : '3) Full RU / EN i18n · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Mobile Push Notifications'}
-              </span>
-            </p>
+                <span>
+                  {lang === 'ru'
+                    ? '3) Полная интернационализация RU / EN · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Push-уведомления на телефон'
+                    : '3) Full RU / EN i18n · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Mobile Push Notifications'}
+                </span>
+              </p>
+            </div>
           </div>
 
           {/* Quick Model Preset Switcher */}

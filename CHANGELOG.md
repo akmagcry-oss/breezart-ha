@@ -4,6 +4,10 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 
 ## [1.2.1]
 
+### Added
+- **Integration Brand Icon & Logo (`custom_components/breezart/`, `assets/breezart.png`)**:
+  - Added official Breezart icon and logo (`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png` in `custom_components/breezart/` and `custom_components/breezart/brand/`, plus `assets/breezart.png`) for display in Home Assistant and HACS.
+
 ### Fixed
 - **Duplicate Mobile Push Notifications & Event Debounce/Throttle (`coordinator.py`, `const.py`)**:
   - Fixed duplicate push notifications on mobile devices where calling both `notify.notify` (which in Home Assistant already broadcasts to all `notify.mobile_app_*` services) and `notify.mobile_app_<phone>` caused 2 identical notifications per event. Added `_resolve_notify_targets()` so `notify.mobile_app_*` targets are called directly without also invoking the `notify.notify` broadcast group.

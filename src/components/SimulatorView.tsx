@@ -509,13 +509,20 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
         >
           <div>
             <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div>
-                <p className="text-xs font-mono text-slate-500">
-                  custom_components/breezart/config_flow.py
-                </p>
-                <h2 id="config-flow-heading" className="text-lg font-bold text-slate-900 mt-0.5">
-                  {t.config.title}
-                </h2>
+              <div className="flex items-center gap-3">
+                <img
+                  src="/assets/aistudio/image_a4906a24.png"
+                  alt="Breezart icon.png"
+                  className="h-9 w-9 object-contain rounded-lg border border-slate-200 bg-white p-1 shrink-0"
+                />
+                <div>
+                  <p className="text-xs font-mono text-slate-500">
+                    custom_components/breezart/config_flow.py · icon.png
+                  </p>
+                  <h2 id="config-flow-heading" className="text-lg font-bold text-slate-900 mt-0.5">
+                    {t.config.title}
+                  </h2>
+                </div>
               </div>
               <span className="text-xs font-mono text-slate-500">
                 v{BREEZART_CONSTANTS.CONFIG_FLOW_VERSION}

@@ -227,6 +227,30 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.1 
     'utf8'
   );
   assert.equal(constPy.includes('CONFIG_FLOW_VERSION: Final[int] = 1'), true);
+
+  // 5) Custom integration icon & logo files must exist and match the uploaded Breezart icon
+  const sourceIcon = fs.readFileSync(
+    path.join(rootDir, 'public/assets/aistudio/image_a4906a24.png')
+  );
+  for (const relIconPath of [
+    'custom_components/breezart/icon.png',
+    'custom_components/breezart/icon@2x.png',
+    'custom_components/breezart/logo.png',
+    'custom_components/breezart/logo@2x.png',
+    'custom_components/breezart/brand/icon.png',
+    'custom_components/breezart/brand/icon@2x.png',
+    'custom_components/breezart/brand/logo.png',
+    'custom_components/breezart/brand/logo@2x.png',
+    'assets/breezart.png',
+  ]) {
+    const fullPath = path.join(rootDir, relIconPath);
+    assert.equal(fs.existsSync(fullPath), true, `${relIconPath} must exist`);
+    assert.equal(
+      fs.readFileSync(fullPath).equals(sourceIcon),
+      true,
+      `${relIconPath} must match uploaded Breezart icon`
+    );
+  }
 });
 
 test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, freeze hazard detection, and 7 individual notification switches with deduplication & throttle (v1.2.1)', async () => {
