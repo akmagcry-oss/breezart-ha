@@ -2,6 +2,18 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.2.4]
+
+### Fixed
+- **Options Probe on Single-Client Controllers (`config_flow.py`, `coordinator.py`)**:
+  - The options-flow connection test now runs with the integration's own connection closed and polling paused (`async_release_connection()`), so controllers that accept only one TCP client no longer report `cannot_connect` when the protocol or slave ID is changed.
+- **Native TCP Probe Port After Switching From Modbus (`coordinator.py`, `__init__.py`)**:
+  - Switching a Modbus (502) entry to Native TCP now probes port 1560 instead of sending the text protocol to 502. Explicit-protocol probes share the auto-detection loop and `resolve_port()` (moved from `__init__.py` to `coordinator.py`), which also closes the probe socket when reading device properties fails.
+
+### Added
+- **Tests (`tests/`)**:
+  - 9 new tests (55 in total) for explicit-protocol port mapping, auto-detection fallback order, probe socket cleanup, and the options probe releasing the running connection.
+
 ## [1.2.3]
 
 ### Fixed

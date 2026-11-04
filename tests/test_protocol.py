@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import struct
 from collections.abc import Awaitable, Callable
+from unittest.mock import patch
 
 import pytest
 
@@ -16,11 +17,15 @@ from custom_components.breezart.const import (
     MODBUS_FC_READ_INPUT,
     MODBUS_IR_FAN_BLOCK_START,
     MODBUS_OPTIONAL_BLOCK_MAX_FAILURES,
+    PROTOCOL_AUTO,
+    PROTOCOL_MODBUS_TCP,
+    PROTOCOL_NATIVE_TCP,
 )
 from custom_components.breezart.coordinator import (
     BreezartModbusClient,
     BreezartTCPClient,
     ModbusExceptionError,
+    async_detect_and_connect_client,
 )
 
 # Fake devices listen on 127.0.0.1; the HA test harness blocks sockets by default.
@@ -261,3 +266,77 @@ async def test_modbus_optional_block_failure_counter_resets(serve) -> None:
     assert MODBUS_IR_FAN_BLOCK_START not in client._optional_failures
     assert MODBUS_IR_FAN_BLOCK_START not in client._unsupported_blocks
     await client.disconnect()
+
+
+# --- Protocol detection -----------------------------------------------------
+
+
+class _ProbeClient:
+    """Records what the detection loop tried; fails unless (protocol, port) is accepted."""
+
+    def __init__(self, accepted: set[tuple[str, int]], log: list, *, protocol: str, port: int, **_):
+        self.protocol, self.port = protocol, port
+        self._accepted, self._log = accepted, log
+        self.connected = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def get_properties(self) -> None:
+        self._log.append((self.protocol, self.port))
+        if (self.protocol, self.port) not in self._accepted:
+            raise ConnectionError("no answer")
+
+    async def disconnect(self) -> None:
+        self.connected = False
+
+
+async def _detect(protocol: str, port: int, accepted: set[tuple[str, int]]):
+    log: list[tuple[str, int]] = []
+    made: list[_ProbeClient] = []
+
+    def factory(**kwargs):
+        made.append(_ProbeClient(accepted, log, **kwargs))
+        return made[-1]
+
+    with patch("custom_components.breezart.coordinator.create_breezart_client", factory):
+        try:
+            result = await async_detect_and_connect_client("192.0.2.10", port, protocol=protocol)
+        except ConnectionError:
+            result = None
+    return result, log, made
+
+
+@pytest.mark.parametrize(
+    ("protocol", "port", "expected_port"),
+    [
+        (PROTOCOL_NATIVE_TCP, 502, 1560),   # Modbus entry switched to Native
+        (PROTOCOL_MODBUS_TCP, 1560, 502),   # Native entry switched to Modbus
+        (PROTOCOL_NATIVE_TCP, 4000, 4000),  # custom ports are kept
+        (PROTOCOL_MODBUS_TCP, 5020, 5020),
+    ],
+)
+async def test_detect_explicit_protocol_uses_matching_port(
+    protocol: str, port: int, expected_port: int
+) -> None:
+    """An explicit protocol is probed once, on its own default port if needed."""
+    result, log, _ = await _detect(protocol, port, {(protocol, expected_port)})
+    assert log == [(protocol, expected_port)]
+    assert result is not None
+    assert result[1:] == (protocol, expected_port)
+
+
+async def test_detect_auto_falls_back_to_native() -> None:
+    """Auto on 502 tries Modbus first, then Native on 1560."""
+    result, log, _ = await _detect(PROTOCOL_AUTO, 502, {(PROTOCOL_NATIVE_TCP, 1560)})
+    assert log == [(PROTOCOL_MODBUS_TCP, 502), (PROTOCOL_NATIVE_TCP, 1560)]
+    assert result[1:] == (PROTOCOL_NATIVE_TCP, 1560)
+
+
+@pytest.mark.parametrize("protocol", [PROTOCOL_NATIVE_TCP, PROTOCOL_MODBUS_TCP, PROTOCOL_AUTO])
+async def test_detect_failure_closes_probe_sockets(protocol: str) -> None:
+    """A probe that connects but fails get_properties() doesn't leak its socket."""
+    result, log, made = await _detect(protocol, 502, accepted=set())
+    assert result is None
+    assert log  # at least one candidate was tried
+    assert made and not any(client.connected for client in made)

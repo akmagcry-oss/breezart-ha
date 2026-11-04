@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import Any
 
 import voluptuous as vol
@@ -24,6 +25,7 @@ from .const import (
     CONF_TEMP_MAX,
     CONF_TEMP_MIN,
     CONFIG_FLOW_VERSION,
+    DATA_COORDINATOR,
     DEFAULT_HOST,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
@@ -252,18 +254,27 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
             if connection_changed:
                 # Probe the new protocol and store the port it actually answered on,
                 # so switching e.g. Native (1560) -> Modbus doesn't keep port 1560.
+                # Controllers that accept a single TCP client would refuse the probe
+                # while the running integration holds its socket, so release it first.
+                entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+                release = (
+                    entry_data[DATA_COORDINATOR].async_release_connection()
+                    if entry_data
+                    else nullcontext()
+                )
                 try:
-                    client, resolved_protocol, resolved_port = (
-                        await async_detect_and_connect_client(
-                            host=self.config_entry.data[CONF_HOST],
-                            port=port,
-                            password=current.get(CONF_PASSWORD, DEFAULT_PASSWORD),
-                            model=cleaned.get(CONF_MODEL, DEFAULT_MODEL),
-                            protocol=protocol,
-                            slave_id=slave_id,
+                    async with release:
+                        client, resolved_protocol, resolved_port = (
+                            await async_detect_and_connect_client(
+                                host=self.config_entry.data[CONF_HOST],
+                                port=port,
+                                password=current.get(CONF_PASSWORD, DEFAULT_PASSWORD),
+                                model=cleaned.get(CONF_MODEL, DEFAULT_MODEL),
+                                protocol=protocol,
+                                slave_id=slave_id,
+                            )
                         )
-                    )
-                    await client.disconnect()
+                        await client.disconnect()
                 except PermissionError as err:
                     _LOGGER.error("Authentication error: %s", err)
                     errors["base"] = ERR_INVALID_AUTH

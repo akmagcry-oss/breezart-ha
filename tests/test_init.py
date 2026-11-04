@@ -8,7 +8,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PORT
 from homeassistant.core import HomeAssistant
 
-from custom_components.breezart import _resolve_port
 from custom_components.breezart.const import (
     CONF_PROTOCOL,
     DATA_COORDINATOR,
@@ -19,6 +18,7 @@ from custom_components.breezart.const import (
     PROTOCOL_NATIVE_TCP,
     TRANSLATION_KEY_CLIMATE,
 )
+from custom_components.breezart.coordinator import resolve_port
 
 from .conftest import entity_id_for
 
@@ -48,7 +48,7 @@ async def test_setup_and_unload(hass: HomeAssistant, setup_integration, fake_cli
 )
 def test_resolve_port(protocol: str, port: int, expected: int) -> None:
     """Default ports follow the protocol; custom ports are left alone."""
-    assert _resolve_port(protocol, port) == expected
+    assert resolve_port(protocol, port) == expected
 
 
 async def test_legacy_protocol_option_uses_matching_port(

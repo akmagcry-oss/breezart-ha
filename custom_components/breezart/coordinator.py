@@ -5,7 +5,8 @@ import asyncio
 import logging
 import struct
 import time
-from collections.abc import Awaitable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Iterable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
@@ -1312,6 +1313,20 @@ class BreezartModbusClient:
 BreezartClientType = BreezartTCPClient | BreezartModbusClient
 
 
+def resolve_port(protocol: str, port: int) -> int:
+    """Swap the port to the protocol's default when it still holds the other one's.
+
+    Entries remember the port of the protocol they were created with, so switching
+    Native (1560) -> Modbus, or Modbus (502) -> Native, would otherwise probe or
+    connect on the wrong port. Custom ports are left alone.
+    """
+    if protocol == PROTOCOL_MODBUS_TCP and port == DEFAULT_PORT:
+        return DEFAULT_MODBUS_PORT
+    if protocol == PROTOCOL_NATIVE_TCP and port == DEFAULT_MODBUS_PORT:
+        return DEFAULT_PORT
+    return port
+
+
 def create_breezart_client(
     host: str,
     port: int,
@@ -1365,44 +1380,18 @@ async def async_detect_and_connect_client(
     temp_max: int | None = None,
 ) -> tuple[BreezartClientType, str, int]:
     """Connect and verify device properties, with automatic fallback between port 502 (Modbus) and 1560 (Native)."""
-    if protocol == PROTOCOL_MODBUS_TCP:
-        target_port = port if port != DEFAULT_PORT else DEFAULT_MODBUS_PORT
-        client = BreezartModbusClient(
-            host=host,
-            port=target_port,
-            slave_id=slave_id,
-            timeout=timeout,
-            model=model,
-            speed_max=speed_max,
-            temp_min=temp_min,
-            temp_max=temp_max,
-        )
-        await client.connect()
-        await client.get_properties()
-        return client, PROTOCOL_MODBUS_TCP, target_port
-
-    if protocol == PROTOCOL_NATIVE_TCP:
-        client = BreezartTCPClient(
-            host=host,
-            port=port,
-            password=password,
-            timeout=timeout,
-            model=model,
-            speed_max=speed_max,
-            temp_min=temp_min,
-            temp_max=temp_max,
-        )
-        await client.connect()
-        await client.get_properties()
-        return client, PROTOCOL_NATIVE_TCP, port
-
-    # PROTOCOL_AUTO: Try Modbus TCP first if port == 502, otherwise try requested port then fallback to 502
-    if port == DEFAULT_MODBUS_PORT:
-        candidates: list[tuple[str, int]] = [
+    if protocol in (PROTOCOL_MODBUS_TCP, PROTOCOL_NATIVE_TCP):
+        # Explicit protocol: one candidate, on the protocol's default port if the
+        # given one belongs to the other protocol (e.g. Modbus entry switched to Native).
+        candidates: list[tuple[str, int]] = [(protocol, resolve_port(protocol, port))]
+    elif port == DEFAULT_MODBUS_PORT:
+        # PROTOCOL_AUTO on 502: Modbus first, then Native on its default port
+        candidates = [
             (PROTOCOL_MODBUS_TCP, DEFAULT_MODBUS_PORT),
             (PROTOCOL_NATIVE_TCP, DEFAULT_PORT),
         ]
     else:
+        # PROTOCOL_AUTO elsewhere: requested port as Native, then Modbus
         candidates = [
             (PROTOCOL_NATIVE_TCP, port),
             (PROTOCOL_MODBUS_TCP, DEFAULT_MODBUS_PORT),
@@ -1428,7 +1417,7 @@ async def async_detect_and_connect_client(
             await cand_client.connect()
             await cand_client.get_properties()
             _LOGGER.info(
-                "Auto-detected Breezart protocol '%s' at %s:%d",
+                "Detected Breezart protocol '%s' at %s:%d",
                 cand_proto,
                 host,
                 cand_port,
@@ -1564,6 +1553,21 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=self.model_name,
             sw_version=str(self.client.firmware_ver or ""),
         )
+
+    @asynccontextmanager
+    async def async_release_connection(self) -> AsyncIterator[None]:
+        """Close the device connection and keep polling paused while the block runs.
+
+        Some controllers accept only one TCP client, so a second connection (e.g. the
+        options flow testing a new protocol) would be refused while this coordinator
+        holds its socket. Polls wait on the update lock; the next poll after the block
+        reconnects and re-reads device properties.
+        """
+        async with self._update_lock:
+            await self.client.disconnect()
+            self._properties_loaded = False
+            self._cached_sensors = {}
+            yield
 
     async def async_command(self, command: Awaitable[None]) -> None:
         """Run a device command, surface failures to the user, then refresh state."""
