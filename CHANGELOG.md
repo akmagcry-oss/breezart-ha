@@ -9,6 +9,10 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
   - Opening the integration options raised `AttributeError` because the options flow assigned the now read-only `config_entry` property. Settings can be changed again.
 - **Verified Protocol Changes in Options (`config_flow.py`, `__init__.py`)**:
   - Changing the protocol or Modbus slave ID now probes the controller and stores the protocol and port that answered in the options (read by setup before the original port). Failures are shown in the form (`cannot_connect`, `invalid_auth`, `unknown`). `_resolve_port()` remains as a fallback for entries switched earlier.
+- **Options Probe on Single-Client Controllers (`config_flow.py`, `coordinator.py`)**:
+  - The options-flow connection test now runs with the integration's own connection closed and polling paused (`async_release_connection()`), so controllers that accept only one TCP client no longer report `cannot_connect`.
+- **Native TCP Probe Port After Switching From Modbus (`coordinator.py`, `__init__.py`)**:
+  - Switching a Modbus (502) entry to Native TCP now probes port 1560 instead of sending the text protocol to 502. Explicit-protocol probes share the auto-detection loop and `resolve_port()`, which also closes the probe socket when reading device properties fails.
 - **Optional Modbus Registers (`coordinator.py`, `const.py`)**:
   - Fan power (10001), filter pollution (12005/12205) and system info (65000) blocks that a controller does not provide stop being polled (immediately on an "illegal function/address" reply, after 3 consecutive failures otherwise) instead of costing a timeout and reconnect on every poll. Modbus exception replies raise `ModbusExceptionError` with the exception code.
 - **Command Errors (`number.py`, `switch.py`, `climate.py`, `coordinator.py`)**:
@@ -16,7 +20,7 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 
 ### Added
 - **Test Suite (`tests/`, `requirements_test.txt`, `pyproject.toml`)**:
-  - 46 pytest tests based on `pytest-homeassistant-custom-component` for the protocol clients (fake TCP servers), setup and reload, config and options flows, and entity commands.
+  - 55 pytest tests based on `pytest-homeassistant-custom-component` for the protocol clients (fake TCP servers), setup and reload, config and options flows, and entity commands.
 
 ## [1.2.2]
 
