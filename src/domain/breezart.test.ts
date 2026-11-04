@@ -154,7 +154,7 @@ test('all entity translation keys exist in both Russian and English catalogs and
   }
 });
 
-test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.2 bump with date-free CHANGELOG history', () => {
+test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.3 bump with date-free CHANGELOG history', () => {
   const rootDir = process.cwd();
 
   // 1) BLOG_ARTICLE.md must be deleted
@@ -164,20 +164,21 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.2 
     'BLOG_ARTICLE.md should be removed'
   );
 
-  // 2) manifest.json and package.json must have version 1.2.2 and akmagcry-oss/breezart-ha links
+  // 2) manifest.json and package.json must have version 1.2.3 and akmagcry-oss/breezart-ha links
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, 'custom_components/breezart/manifest.json'), 'utf8')
   );
-  assert.equal(manifest.version, '1.2.2');
+  assert.equal(manifest.version, '1.2.3');
   assert.equal(manifest.documentation, 'https://github.com/akmagcry-oss/breezart-ha');
   assert.equal(manifest.issue_tracker, 'https://github.com/akmagcry-oss/breezart-ha/issues');
   assert.deepEqual(manifest.codeowners, ['@akmagcry-oss']);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.2.2');
+  assert.equal(pkg.version, '1.2.3');
 
-  // 3) CHANGELOG.md must contain [1.2.2], [1.2.1], [1.2.0], [1.1.2], [1.1.1], [1.1.0], and [1.0.0] in descending order without release dates
+  // 3) CHANGELOG.md must contain [1.2.3], [1.2.2], [1.2.1], [1.2.0], [1.1.2], [1.1.1], [1.1.0], and [1.0.0] in descending order without release dates
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
+  assert.equal(changelog.includes('## [1.2.3]'), true);
   assert.equal(changelog.includes('## [1.2.2]'), true);
   assert.equal(changelog.includes('## [1.2.1]'), true);
   assert.equal(changelog.includes('## [1.2.0]'), true);
@@ -189,6 +190,11 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.2 
     /^## \[\d+\.\d+\.\d+\] -/m.test(changelog),
     false,
     'CHANGELOG.md version headers must not contain release dates'
+  );
+  assert.equal(
+    changelog.indexOf('## [1.2.3]') < changelog.indexOf('## [1.2.2]'),
+    true,
+    '[1.2.3] should appear before [1.2.2] in CHANGELOG.md'
   );
   assert.equal(
     changelog.indexOf('## [1.2.2]') < changelog.indexOf('## [1.2.1]'),
