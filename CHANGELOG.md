@@ -8,7 +8,7 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 - **Options Dialog Crash on Home Assistant 2025.12+ (`config_flow.py`)**:
   - Opening the integration options raised `AttributeError` because the options flow assigned the now read-only `config_entry` property. Settings can be changed again.
 - **Verified Protocol Changes in Options (`config_flow.py`, `__init__.py`)**:
-  - Changing the protocol or Modbus slave ID now probes the controller and stores the protocol and port that answered in the options (read by setup before the original port). Failures are shown in the form (`cannot_connect`, `invalid_auth`, `unknown`). `_resolve_port()` remains as a fallback for entries switched earlier.
+  - Changing the protocol or Modbus slave ID now probes the controller and stores the protocol and port that answered in the options (read by setup before the original port). Failures are shown in the form (`cannot_connect`, `invalid_auth`, `unknown`). `resolve_port()` remains as a fallback for entries switched earlier.
 - **Options Probe on Single-Client Controllers (`config_flow.py`, `coordinator.py`)**:
   - The options-flow connection test now runs with the integration's own connection closed and polling paused (`async_release_connection()`), so controllers that accept only one TCP client no longer report `cannot_connect`.
 - **Native TCP Probe Port After Switching From Modbus (`coordinator.py`, `__init__.py`)**:
