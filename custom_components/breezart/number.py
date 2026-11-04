@@ -55,8 +55,9 @@ class BreezartTargetTemperature(CoordinatorEntity[BreezartDataCoordinator], Numb
 
     async def async_set_native_value(self, value: float) -> None:
         """Set target temperature via protocol."""
-        await self.coordinator.client.set_temperature(int(value))
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_command(
+            self.coordinator.client.set_temperature(int(value))
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -95,8 +96,9 @@ class BreezartFanSpeed(CoordinatorEntity[BreezartDataCoordinator], NumberEntity)
 
     async def async_set_native_value(self, value: float) -> None:
         """Set fan speed via protocol."""
-        await self.coordinator.client.set_fan_speed(int(value))
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_command(
+            self.coordinator.client.set_fan_speed(int(value))
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

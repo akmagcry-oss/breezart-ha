@@ -5,11 +5,12 @@ import asyncio
 import logging
 import struct
 import time
-from collections.abc import Iterable
+from collections.abc import Awaitable, Iterable
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -251,6 +252,15 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def command_error(err: BaseException) -> HomeAssistantError:
+    """Wrap a failed device command in a translated error shown to the user."""
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="command_failed",
+        translation_placeholders={"error": str(err) or type(err).__name__},
+    )
 
 
 def _dec_to_hex(value: int) -> str:
@@ -1554,6 +1564,16 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=self.model_name,
             sw_version=str(self.client.firmware_ver or ""),
         )
+
+    async def async_command(self, command: Awaitable[None]) -> None:
+        """Run a device command, surface failures to the user, then refresh state."""
+        try:
+            await command
+        except HomeAssistantError:
+            raise
+        except Exception as err:
+            raise command_error(err) from err
+        await self.async_request_refresh()
 
     def is_notification_enabled(self, key: str) -> bool:
         """Return True if the specified notification toggle is enabled."""
