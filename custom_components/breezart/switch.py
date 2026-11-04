@@ -39,13 +39,11 @@ class BreezartPowerSwitch(CoordinatorEntity[BreezartDataCoordinator], SwitchEnti
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the unit on."""
-        await self.coordinator.client.set_power(True)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_command(self.coordinator.client.set_power(True))
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the unit off."""
-        await self.coordinator.client.set_power(False)
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_command(self.coordinator.client.set_power(False))
 
     @property
     def device_info(self) -> DeviceInfo:

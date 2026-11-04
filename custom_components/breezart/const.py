@@ -382,6 +382,11 @@ MODBUS_FC_READ_INPUT: Final[int] = 0x04
 MODBUS_FC_WRITE_SINGLE: Final[int] = 0x06
 MODBUS_FC_WRITE_MULTIPLE: Final[int] = 0x10
 MODBUS_EXCEPTION_MASK: Final[int] = 0x80
+# Modbus exception codes meaning "this register/function does not exist on the device"
+MODBUS_EXC_ILLEGAL_FUNCTION: Final[int] = 0x01
+MODBUS_EXC_ILLEGAL_DATA_ADDRESS: Final[int] = 0x02
+# Consecutive failures before an optional register block stops being polled
+MODBUS_OPTIONAL_BLOCK_MAX_FAILURES: Final[int] = 3
 
 MODBUS_PERCENT_MULTIPLIER: Final[float] = 100.0
 MODBUS_MAX_PERCENT_RAW: Final[int] = 10000

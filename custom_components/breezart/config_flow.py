@@ -40,13 +40,6 @@ from .const import (
     ERR_CANNOT_CONNECT,
     ERR_INVALID_AUTH,
     ERR_UNKNOWN,
-    KEY_NOTIFY_FILTER,
-    KEY_NOTIFY_FREEZE,
-    KEY_NOTIFY_OFFLINE,
-    KEY_NOTIFY_ONLINE,
-    KEY_NOTIFY_OTHER_ERRORS,
-    KEY_NOTIFY_OVERHEAT,
-    KEY_NOTIFY_POWER,
     MAX_ALLOWED_SPEED_MAX,
     MAX_ALLOWED_TEMP_BOUND,
     MIN_ALLOWED_SPEED_MAX,
@@ -87,7 +80,7 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow for switching model preset, protocol, fan speeds, and temperature bounds."""
-        return BreezartOptionsFlowHandler(config_entry)
+        return BreezartOptionsFlowHandler()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -222,14 +215,17 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Breezart options for changing model preset, protocol, fan speeds, and temperature limits."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    def _current(self) -> dict[str, Any]:
+        """Return the effective settings: options override the original entry data."""
+        return {**self.config_entry.data, **self.config_entry.options}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the Breezart options."""
+        """Manage the Breezart options, verifying the connection when it changes."""
+        current = self._current()
+        errors: dict[str, str] = {}
+
         if user_input is not None:
             raw_t_min = int(user_input.get(CONF_TEMP_MIN, DEFAULT_TEMP_MIN))
             raw_t_max = int(user_input.get(CONF_TEMP_MAX, DEFAULT_TEMP_MAX))
@@ -239,54 +235,56 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
                 MIN_ALLOWED_SPEED_MAX,
                 min(MAX_ALLOWED_SPEED_MAX, int(user_input.get(CONF_SPEED_MAX, DEFAULT_SPEED_MAX))),
             )
-            cleaned = {
+            cleaned: dict[str, Any] = {
                 **user_input,
                 CONF_SPEED_MAX: s_max,
                 CONF_TEMP_MIN: t_min,
                 CONF_TEMP_MAX: t_max,
             }
-            return self.async_create_entry(title="", data=cleaned)
 
-        current_model = self.config_entry.options.get(
-            CONF_MODEL,
-            self.config_entry.data.get(CONF_MODEL, DEFAULT_MODEL),
-        )
-        preset = get_model_preset(current_model)
-        current_protocol = self.config_entry.options.get(
-            CONF_PROTOCOL,
-            self.config_entry.data.get(CONF_PROTOCOL, DEFAULT_PROTOCOL),
-        )
-        current_slave_id = int(
-            self.config_entry.options.get(
-                CONF_SLAVE_ID,
-                self.config_entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID),
-            )
-        )
-        current_speed_max = int(
-            self.config_entry.options.get(
-                CONF_SPEED_MAX,
-                self.config_entry.data.get(CONF_SPEED_MAX, preset["speed_max"]),
-            )
-        )
-        current_temp_min = int(
-            self.config_entry.options.get(
-                CONF_TEMP_MIN,
-                self.config_entry.data.get(CONF_TEMP_MIN, preset["temp_min"]),
-            )
-        )
-        current_temp_max = int(
-            self.config_entry.options.get(
-                CONF_TEMP_MAX,
-                self.config_entry.data.get(CONF_TEMP_MAX, preset["temp_max"]),
-            )
-        )
-        current_notify_service = str(
-            self.config_entry.options.get(
-                CONF_NOTIFY_SERVICE,
-                self.config_entry.data.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE),
-            )
-        )
+            protocol = cleaned.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
+            slave_id = int(cleaned.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
+            port = int(current.get(CONF_PORT, DEFAULT_PORT))
+            connection_changed = protocol != current.get(
+                CONF_PROTOCOL, DEFAULT_PROTOCOL
+            ) or slave_id != int(current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
 
+            if connection_changed:
+                # Probe the new protocol and store the port it actually answered on,
+                # so switching e.g. Native (1560) -> Modbus doesn't keep port 1560.
+                try:
+                    client, resolved_protocol, resolved_port = (
+                        await async_detect_and_connect_client(
+                            host=self.config_entry.data[CONF_HOST],
+                            port=port,
+                            password=current.get(CONF_PASSWORD, DEFAULT_PASSWORD),
+                            model=cleaned.get(CONF_MODEL, DEFAULT_MODEL),
+                            protocol=protocol,
+                            slave_id=slave_id,
+                        )
+                    )
+                    await client.disconnect()
+                except PermissionError as err:
+                    _LOGGER.error("Authentication error: %s", err)
+                    errors["base"] = ERR_INVALID_AUTH
+                except (TimeoutError, ConnectionError, OSError, ValueError) as err:
+                    _LOGGER.error("Connection error: %s", err)
+                    errors["base"] = ERR_CANNOT_CONNECT
+                except Exception as err:
+                    _LOGGER.exception("Unexpected error during connection test: %s", err)
+                    errors["base"] = ERR_UNKNOWN
+                else:
+                    cleaned[CONF_PROTOCOL] = resolved_protocol
+                    cleaned[CONF_PORT] = resolved_port
+            elif CONF_PORT in self.config_entry.options:
+                cleaned[CONF_PORT] = self.config_entry.options[CONF_PORT]
+
+            if not errors:
+                return self.async_create_entry(title="", data=cleaned)
+            # Re-show the form with what the user entered.
+            current = {**current, **user_input}
+
+        preset = get_model_preset(current.get(CONF_MODEL, DEFAULT_MODEL))
         model_selector = SelectSelector(
             SelectSelectorConfig(
                 options=MODEL_OPTIONS,
@@ -302,89 +300,47 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
             )
         )
 
+        schema: dict[Any, Any] = {
+            vol.Required(
+                CONF_MODEL, default=current.get(CONF_MODEL, DEFAULT_MODEL)
+            ): model_selector,
+            vol.Required(
+                CONF_PROTOCOL, default=current.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
+            ): protocol_selector,
+            vol.Optional(
+                CONF_SLAVE_ID, default=int(current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
+            ): int,
+            vol.Required(
+                CONF_SPEED_MAX,
+                default=int(current.get(CONF_SPEED_MAX, preset["speed_max"])),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_ALLOWED_SPEED_MAX, max=MAX_ALLOWED_SPEED_MAX),
+            ),
+            vol.Required(
+                CONF_TEMP_MIN,
+                default=int(current.get(CONF_TEMP_MIN, preset["temp_min"])),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_ALLOWED_TEMP_BOUND, max=MAX_ALLOWED_TEMP_BOUND - 1),
+            ),
+            vol.Required(
+                CONF_TEMP_MAX,
+                default=int(current.get(CONF_TEMP_MAX, preset["temp_max"])),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND),
+            ),
+            vol.Optional(
+                CONF_NOTIFY_SERVICE,
+                default=str(current.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE)),
+            ): str,
+        }
+        for key in NOTIFICATION_SETTING_KEYS:
+            schema[vol.Optional(key, default=bool(current.get(key, True)))] = bool
+
         return self.async_show_form(
             step_id=STEP_INIT,
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_MODEL, default=current_model): model_selector,
-                    vol.Required(CONF_PROTOCOL, default=current_protocol): protocol_selector,
-                    vol.Optional(CONF_SLAVE_ID, default=current_slave_id): int,
-                    vol.Required(
-                        CONF_SPEED_MAX, default=current_speed_max
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_SPEED_MAX, max=MAX_ALLOWED_SPEED_MAX)),
-                    vol.Required(
-                        CONF_TEMP_MIN, default=current_temp_min
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND, max=MAX_ALLOWED_TEMP_BOUND - 1)),
-                    vol.Required(
-                        CONF_TEMP_MAX, default=current_temp_max
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND)),
-                    vol.Optional(
-                        CONF_NOTIFY_SERVICE, default=current_notify_service
-                    ): str,
-                    vol.Optional(
-                        KEY_NOTIFY_OVERHEAT,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_OVERHEAT,
-                                self.config_entry.data.get(KEY_NOTIFY_OVERHEAT, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_FREEZE,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_FREEZE,
-                                self.config_entry.data.get(KEY_NOTIFY_FREEZE, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_FILTER,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_FILTER,
-                                self.config_entry.data.get(KEY_NOTIFY_FILTER, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_OFFLINE,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_OFFLINE,
-                                self.config_entry.data.get(KEY_NOTIFY_OFFLINE, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_ONLINE,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_ONLINE,
-                                self.config_entry.data.get(KEY_NOTIFY_ONLINE, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_POWER,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_POWER,
-                                self.config_entry.data.get(KEY_NOTIFY_POWER, True),
-                            )
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        KEY_NOTIFY_OTHER_ERRORS,
-                        default=bool(
-                            self.config_entry.options.get(
-                                KEY_NOTIFY_OTHER_ERRORS,
-                                self.config_entry.data.get(KEY_NOTIFY_OTHER_ERRORS, True),
-                            )
-                        ),
-                    ): bool,
-                }
-            ),
+            data_schema=vol.Schema(schema),
+            errors=errors,
         )
-

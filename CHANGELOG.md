@@ -2,6 +2,22 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.2.3]
+
+### Fixed
+- **Options Dialog Crash on Home Assistant 2025.12+ (`config_flow.py`)**:
+  - Opening the integration options raised `AttributeError` because the options flow assigned the now read-only `config_entry` property. Settings can be changed again.
+- **Verified Protocol Changes in Options (`config_flow.py`, `__init__.py`)**:
+  - Changing the protocol or Modbus slave ID now probes the controller and stores the protocol and port that answered in the options (read by setup before the original port). Failures are shown in the form (`cannot_connect`, `invalid_auth`, `unknown`). `_resolve_port()` remains as a fallback for entries switched earlier.
+- **Optional Modbus Registers (`coordinator.py`, `const.py`)**:
+  - Fan power (10001), filter pollution (12005/12205) and system info (65000) blocks that a controller does not provide stop being polled (immediately on an "illegal function/address" reply, after 3 consecutive failures otherwise) instead of costing a timeout and reconnect on every poll. Modbus exception replies raise `ModbusExceptionError` with the exception code.
+- **Command Errors (`number.py`, `switch.py`, `climate.py`, `coordinator.py`)**:
+  - Failed commands from number and switch entities show a translated error (`command_failed`, en/ru) via `BreezartDataCoordinator.async_command()` instead of an unknown error; the climate entity uses the same translated error.
+
+### Added
+- **Test Suite (`tests/`, `requirements_test.txt`, `pyproject.toml`)**:
+  - 46 pytest tests based on `pytest-homeassistant-custom-component` for the protocol clients (fake TCP servers), setup and reload, config and options flows, and entity commands.
+
 ## [1.2.2]
 
 ### Fixed
