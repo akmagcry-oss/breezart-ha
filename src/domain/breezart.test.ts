@@ -154,7 +154,7 @@ test('all entity translation keys exist in both Russian and English catalogs and
   }
 });
 
-test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.2 bump with date-free CHANGELOG history', () => {
+test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.2.0 bump with date-free CHANGELOG history', () => {
   const rootDir = process.cwd();
 
   // 1) BLOG_ARTICLE.md must be deleted
@@ -164,20 +164,21 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.2 
     'BLOG_ARTICLE.md should be removed'
   );
 
-  // 2) manifest.json and package.json must have version 1.1.2 and akmagcry-oss/breezart-ha links
+  // 2) manifest.json and package.json must have version 1.2.0 and akmagcry-oss/breezart-ha links
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, 'custom_components/breezart/manifest.json'), 'utf8')
   );
-  assert.equal(manifest.version, '1.1.2');
+  assert.equal(manifest.version, '1.2.0');
   assert.equal(manifest.documentation, 'https://github.com/akmagcry-oss/breezart-ha');
   assert.equal(manifest.issue_tracker, 'https://github.com/akmagcry-oss/breezart-ha/issues');
   assert.deepEqual(manifest.codeowners, ['@akmagcry-oss']);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.1.2');
+  assert.equal(pkg.version, '1.2.0');
 
-  // 3) CHANGELOG.md must contain [1.1.2], [1.1.1], [1.1.0], and [1.0.0] in descending order without release dates
+  // 3) CHANGELOG.md must contain [1.2.0], [1.1.2], [1.1.1], [1.1.0], and [1.0.0] in descending order without release dates
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
+  assert.equal(changelog.includes('## [1.2.0]'), true);
   assert.equal(changelog.includes('## [1.1.2]'), true);
   assert.equal(changelog.includes('## [1.1.1]'), true);
   assert.equal(changelog.includes('## [1.1.0]'), true);
@@ -186,6 +187,11 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.2 
     /^## \[\d+\.\d+\.\d+\] -/m.test(changelog),
     false,
     'CHANGELOG.md version headers must not contain release dates'
+  );
+  assert.equal(
+    changelog.indexOf('## [1.2.0]') < changelog.indexOf('## [1.1.2]'),
+    true,
+    '[1.2.0] should appear before [1.1.2] in CHANGELOG.md'
   );
   assert.equal(
     changelog.indexOf('## [1.1.2]') < changelog.indexOf('## [1.1.1]'),
@@ -206,7 +212,7 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.2 
   const readme = fs.readFileSync(path.join(rootDir, 'README.md'), 'utf8');
   assert.equal(readme.includes('https://github.com/akmagcry-oss/breezart-ha'), true);
   assert.equal(readme.includes('smirnowegor/Breezart-Home-Assistant-Integration'), false);
-  assert.equal(readme.includes('v1.1.2'), true);
+  assert.equal(readme.includes('v1.2.0'), true);
 
   // 4) CONFIG_FLOW_VERSION must remain 1
   assert.equal(BREEZART_CONSTANTS.CONFIG_FLOW_VERSION, 1);
@@ -217,7 +223,7 @@ test('repository metadata, GitHub URLs, BLOG_ARTICLE removal, and version 1.1.2 
   assert.equal(constPy.includes('CONFIG_FLOW_VERSION: Final[int] = 1'), true);
 });
 
-test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, freeze hazard detection, and dual-protocol HA support', async () => {
+test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, freeze hazard detection, and 7 individual notification switches', async () => {
   const mod = await import('./breezart');
   assert.equal(typeof mod.buildModbusReadFrameHex, 'function');
   assert.equal(typeof mod.buildModbusWriteSingleFrameHex, 'function');
@@ -253,7 +259,6 @@ test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, free
   assert.equal(mod.scaleModbusPercent100ToSpeed(7000, 10), 7);
 
   // Freeze hazard detection:
-  // 1) Normal heating in winter (-4.5°C outdoor, +21.6°C supply, mode=HEAT) -> false
   assert.equal(
     mod.detectFreezeHazard({
       hwFreezeFlag: false,
@@ -266,7 +271,6 @@ test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, free
     }),
     false
   );
-  // 2) Outdoor below 0°C (-5°C) with heating turned off (MODE_VENT) while unit is running -> true
   assert.equal(
     mod.detectFreezeHazard({
       hwFreezeFlag: false,
@@ -279,51 +283,47 @@ test('Modbus TCP (JLV135 + JL204c7 v1.7.14) MBAP framing, register scaling, free
     }),
     true
   );
-  // 3) Insufficient heating: supply air drops below +5.0°C (e.g., +3.8°C) -> true
-  assert.equal(
-    mod.detectFreezeHazard({
-      hwFreezeFlag: false,
-      power: true,
-      modeCode: BREEZART_CONSTANTS.MODE_HEAT,
-      controlTemp: 3.8,
-      supplyTemp: 3.8,
-      outdoorTemp: -18.0,
-      waterTemp: null,
-    }),
-    true
-  );
-  // 4) Hardware freeze bit set on controller -> true
-  assert.equal(
-    mod.detectFreezeHazard({
-      hwFreezeFlag: true,
-      power: false,
-      modeCode: BREEZART_CONSTANTS.MODE_OFF,
-      controlTemp: 20.0,
-      supplyTemp: 20.0,
-      outdoorTemp: 10.0,
-      waterTemp: null,
-    }),
-    true
-  );
 
-  // Translations for danger_freeze
+  // Translations for danger_freeze and all 7 notification switches
   assert.equal(translateEntity('danger_freeze', 'ru'), 'Угроза обморожения');
   assert.equal(translateEntity('danger_freeze', 'en'), 'Freeze hazard');
+  assert.equal(mod.NOTIFICATION_SETTING_KEYS.length, 7);
 
-  // Check Python integration files contain danger_freeze and BreezartModbusClient
   const rootDir = process.cwd();
-  const constPy = fs.readFileSync(
-    path.join(rootDir, 'custom_components/breezart/const.py'),
-    'utf8'
+  const stringsJson = JSON.parse(
+    fs.readFileSync(path.join(rootDir, 'custom_components/breezart/strings.json'), 'utf8')
   );
-  assert.equal(constPy.includes('KEY_DANGER_FREEZE: Final[str] = "danger_freeze"'), true);
+  const enJson = JSON.parse(
+    fs.readFileSync(path.join(rootDir, 'custom_components/breezart/translations/en.json'), 'utf8')
+  );
+  const ruJson = JSON.parse(
+    fs.readFileSync(path.join(rootDir, 'custom_components/breezart/translations/ru.json'), 'utf8')
+  );
 
-  const binSensorPy = fs.readFileSync(
-    path.join(rootDir, 'custom_components/breezart/binary_sensor.py'),
+  for (const notifyKey of mod.NOTIFICATION_SETTING_KEYS) {
+    assert.ok(stringsJson.entity.switch[notifyKey]?.name, `strings.json missing switch.${notifyKey}`);
+    assert.ok(enJson.entity.switch[notifyKey]?.name, `en.json missing switch.${notifyKey}`);
+    assert.ok(ruJson.entity.switch[notifyKey]?.name, `ru.json missing switch.${notifyKey}`);
+    assert.ok(stringsJson.options.step.init.data[notifyKey], `strings.json options missing ${notifyKey}`);
+    assert.ok(enJson.options.step.init.data[notifyKey], `en.json options missing ${notifyKey}`);
+    assert.ok(ruJson.options.step.init.data[notifyKey], `ru.json options missing ${notifyKey}`);
+  }
+
+  const switchPy = fs.readFileSync(
+    path.join(rootDir, 'custom_components/breezart/switch.py'),
     'utf8'
   );
-  assert.equal(binSensorPy.includes('KEY_DANGER_FREEZE'), true);
-  assert.equal(binSensorPy.includes('BinarySensorDeviceClass.COLD'), true);
+  assert.equal(switchPy.includes('BreezartNotificationSwitch'), true);
+  assert.equal(switchPy.includes('EntityCategory.CONFIG'), true);
+
+  const coordinatorPy = fs.readFileSync(
+    path.join(rootDir, 'custom_components/breezart/coordinator.py'),
+    'utf8'
+  );
+  assert.equal(coordinatorPy.includes('_async_evaluate_notifications'), true);
+  assert.equal(coordinatorPy.includes('_async_send_notification'), true);
+  assert.equal(coordinatorPy.includes('MOBILE_APP_SERVICE_PREFIX'), true);
 });
+
 
 

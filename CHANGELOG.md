@@ -2,6 +2,24 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.2.0]
+
+### Added
+- **Important Event Notifications with Mobile Push Delivery (`notify.*` / `notify.mobile_app_*`)**:
+  - Added automatic edge-triggered notification dispatch in `custom_components/breezart/coordinator.py` (`_async_evaluate_notifications` and `_async_send_notification`) for 7 key device events:
+    1. **Overheat hazard** (`notify_overheat` — `danger_overheat` transitions to `True`)
+    2. **Freeze hazard** (`notify_freeze` — `danger_freeze` transitions to `True`)
+    3. **Filter replacement warning** (`notify_filter` — `change_filter` transitions to `True` or filter pollution reaches `replace_soon` / `clogged`, `≥ 60%`)
+    4. **Device offline** (`notify_offline` — controller loses network/power connectivity)
+    5. **Device back online** (`notify_online` — controller reconnects after being offline)
+    6. **Device power on/off** (`notify_power` — ventilation unit turns on or off)
+    7. **Other device errors & warnings** (`notify_other_errors` — `is_fatal_err`, `is_warn_err`, or controller text fault `msg` not covered by overheat/freeze/filter)
+  - Automatic delivery to the configured Home Assistant notification service (`notify.notify` by default), all discovered Home Assistant Companion App mobile devices (`notify.mobile_app_*`), `persistent_notification.create`, and the `breezart_notification` Home Assistant event bus.
+- **Individual Per-Event Notification Toggles in Device Settings (`switch.py` & `config_flow.py`)**:
+  - Added 7 `EntityCategory.CONFIG` switches (`BreezartNotificationSwitch` in `custom_components/breezart/switch.py`) so each notification type can be enabled or disabled individually directly from the Home Assistant Device page (**Настройки / Configuration**) without reloading the integration (`DATA_SKIP_RELOAD`).
+  - Added all 7 notification switches and `notify_service` target configuration to `OptionsFlow` in `custom_components/breezart/config_flow.py`.
+  - Added full Russian and English translations for all notification switches, options, and notification messages in `const.py`, `strings.json`, `translations/ru.json`, and `translations/en.json`.
+
 ## [1.1.2]
 
 ### Added

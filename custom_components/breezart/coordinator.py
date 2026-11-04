@@ -50,6 +50,7 @@ from .const import (
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NAME,
+    DEFAULT_NOTIFY_SERVICE,
     DEFAULT_PASSWORD,
     DEFAULT_PORT,
     DEFAULT_PROTOCOL,
@@ -58,6 +59,8 @@ from .const import (
     DELIMITER,
     DOMAIN,
     ERROR_PREFIX,
+    EVENT_BREEZART_NOTIFICATION,
+    FILTER_POLLUTION_REPLACE_MAX,
     FREEZE_OUTDOOR_TEMP_THRESHOLD,
     FREEZE_SUPPLY_TEMP_THRESHOLD,
     HEX_FORMAT_LOWER,
@@ -85,6 +88,13 @@ from .const import (
     KEY_MODE,
     KEY_MODE_SET,
     KEY_MSG,
+    KEY_NOTIFY_FILTER,
+    KEY_NOTIFY_FREEZE,
+    KEY_NOTIFY_OFFLINE,
+    KEY_NOTIFY_ONLINE,
+    KEY_NOTIFY_OTHER_ERRORS,
+    KEY_NOTIFY_OVERHEAT,
+    KEY_NOTIFY_POWER,
     KEY_POWER,
     KEY_POWER_CONSUMPTION,
     KEY_PROTOCOL_VER,
@@ -158,8 +168,20 @@ from .const import (
     MODE_OFF,
     MODE_VENT,
     MODEL_CUSTOM,
+    MOBILE_APP_SERVICE_PREFIX,
     NO_DATA_BYTE,
     NO_DATA_HEX,
+    NOTIFICATION_SETTING_KEYS,
+    NOTIFY_DOMAIN,
+    NOTIFY_EVENT_FILTER,
+    NOTIFY_EVENT_FREEZE,
+    NOTIFY_EVENT_OFFLINE,
+    NOTIFY_EVENT_ONLINE,
+    NOTIFY_EVENT_OTHER_ERRORS,
+    NOTIFY_EVENT_OVERHEAT,
+    NOTIFY_EVENT_POWER_OFF,
+    NOTIFY_EVENT_POWER_ON,
+    PERSISTENT_NOTIFICATION_DOMAIN,
     POWER_OFF,
     POWER_ON,
     PROTOCOL_AUTO,
@@ -179,6 +201,7 @@ from .const import (
     RESP_SENSORS,
     RESP_STATE,
     SENSORS_UPDATE_INTERVAL,
+    SERVICE_CREATE,
     SIGN_BIT_MASK,
     SIGN_BIT_OFFSET,
     SIGNED_BYTE_OFFSET,
@@ -216,6 +239,7 @@ from .const import (
     VST07_IDX_STATE,
     VST07_IDX_TEMPR,
     get_model_preset,
+    translate_value,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1318,13 +1342,16 @@ async def async_detect_and_connect_client(
 
 
 class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator that polls Breezart for state and sensor data."""
+    """Coordinator that polls Breezart for state and sensor data and dispatches event notifications."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         client: BreezartClientType,
         model: str = DEFAULT_MODEL,
+        *,
+        notify_settings: dict[str, bool] | None = None,
+        notify_service: str = DEFAULT_NOTIFY_SERVICE,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -1336,9 +1363,28 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client = client
         self.model = model
         self.preset = get_model_preset(model)
+        self.notify_service: str = (notify_service or DEFAULT_NOTIFY_SERVICE).strip()
+        self.notify_settings: dict[str, bool] = {
+            key: True for key in NOTIFICATION_SETTING_KEYS
+        }
+        if notify_settings:
+            for key in NOTIFICATION_SETTING_KEYS:
+                if key in notify_settings:
+                    self.notify_settings[key] = bool(notify_settings[key])
+
         self._properties_loaded = False
         self._cached_sensors: dict[str, Any] = {}
         self._sensors_update_counter = 0
+
+        # Edge-detection state for notifications
+        self._has_initial_snapshot = False
+        self._was_online = True
+        self._prev_power: bool | None = None
+        self._prev_overheat = False
+        self._prev_freeze = False
+        self._prev_filter = False
+        self._prev_other_err = False
+        self._prev_err_msg: str | None = None
 
     @property
     def model_name(self) -> str:
@@ -1355,6 +1401,159 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=self.model_name,
             sw_version=str(self.client.firmware_ver or ""),
         )
+
+    def is_notification_enabled(self, key: str) -> bool:
+        """Return True if the specified notification toggle is enabled."""
+        return bool(self.notify_settings.get(key, True))
+
+    def set_notification_enabled(self, key: str, enabled: bool) -> None:
+        """Enable or disable a specific notification event type."""
+        if key in NOTIFICATION_SETTING_KEYS:
+            self.notify_settings[key] = bool(enabled)
+
+    async def _async_send_notification(
+        self,
+        event_key: str,
+        *,
+        extra_detail: str | None = None,
+    ) -> None:
+        """Send a localized notification to mobile devices, HA persistent notifications, and the event bus."""
+        language = getattr(getattr(self.hass, "config", None), "language", "ru")
+        title = f"{DEFAULT_NAME} {self.model_name} ({self.client.host})"
+        base_msg = translate_value("notifications", event_key, language)
+        message = f"{base_msg}: {extra_detail}" if extra_detail else base_msg
+
+        # 1) Fire Home Assistant bus event for custom automations
+        try:
+            self.hass.bus.async_fire(
+                EVENT_BREEZART_NOTIFICATION,
+                {
+                    "host": self.client.host,
+                    "model": self.model,
+                    "event": event_key,
+                    "title": title,
+                    "message": message,
+                },
+            )
+        except Exception as err:
+            _LOGGER.debug("Failed to fire %s event: %s", EVENT_BREEZART_NOTIFICATION, err)
+
+        # 2) Create persistent notification in Home Assistant UI
+        try:
+            if self.hass.services.has_service(PERSISTENT_NOTIFICATION_DOMAIN, SERVICE_CREATE):
+                await self.hass.services.async_call(
+                    PERSISTENT_NOTIFICATION_DOMAIN,
+                    SERVICE_CREATE,
+                    {
+                        "title": title,
+                        "message": message,
+                        "notification_id": f"{DOMAIN}_{self.client.host}_{event_key}",
+                    },
+                    blocking=False,
+                )
+        except Exception as err:
+            _LOGGER.debug("Failed to create persistent notification: %s", err)
+
+        # 3) Send push notification to phone / configured notify.* service(s)
+        try:
+            all_services = self.hass.services.async_services()
+            notify_services = all_services.get(NOTIFY_DOMAIN, {})
+            targets: list[str] = []
+
+            raw_targets = [
+                item.strip()
+                for item in self.notify_service.split(",")
+                if item.strip()
+            ]
+            for raw_target in raw_targets:
+                svc_name = (
+                    raw_target.split(".", 1)[1]
+                    if raw_target.startswith(f"{NOTIFY_DOMAIN}.")
+                    else raw_target
+                )
+                if svc_name in notify_services and svc_name not in targets:
+                    targets.append(svc_name)
+
+            # When using default notify.notify, also deliver directly to any registered mobile_app_* phone targets
+            if not raw_targets or self.notify_service == DEFAULT_NOTIFY_SERVICE:
+                for svc_name in notify_services:
+                    if svc_name.startswith(MOBILE_APP_SERVICE_PREFIX) and svc_name not in targets:
+                        targets.append(svc_name)
+
+            for svc_name in targets:
+                await self.hass.services.async_call(
+                    NOTIFY_DOMAIN,
+                    svc_name,
+                    {"title": title, "message": message},
+                    blocking=False,
+                )
+        except Exception as err:
+            _LOGGER.debug("Failed to call notify service for %s: %s", event_key, err)
+
+    async def _async_evaluate_notifications(self, data: dict[str, Any]) -> None:
+        """Check for state transitions and dispatch enabled notifications."""
+        # 1) Device came back online after an outage
+        if not self._was_online:
+            self._was_online = True
+            if self.is_notification_enabled(KEY_NOTIFY_ONLINE):
+                await self._async_send_notification(NOTIFY_EVENT_ONLINE)
+
+        # 2) Overheat hazard (rising edge)
+        cur_overheat = bool(data.get(KEY_DANGER_OVERHEAT, False))
+        if cur_overheat and not self._prev_overheat:
+            if self.is_notification_enabled(KEY_NOTIFY_OVERHEAT):
+                await self._async_send_notification(NOTIFY_EVENT_OVERHEAT)
+        self._prev_overheat = cur_overheat
+
+        # 3) Freeze hazard (rising edge)
+        cur_freeze = bool(data.get(KEY_DANGER_FREEZE, False))
+        if cur_freeze and not self._prev_freeze:
+            if self.is_notification_enabled(KEY_NOTIFY_FREEZE):
+                await self._async_send_notification(NOTIFY_EVENT_FREEZE)
+        self._prev_freeze = cur_freeze
+
+        # 4) Filter replacement warning (rising edge)
+        filter_dust = data.get(KEY_FILTER_DUST)
+        cur_filter = bool(data.get(KEY_CHANGE_FILTER, False)) or (
+            isinstance(filter_dust, (int, float))
+            and filter_dust >= FILTER_POLLUTION_REPLACE_MAX
+        )
+        if cur_filter and not self._prev_filter:
+            if self.is_notification_enabled(KEY_NOTIFY_FILTER):
+                detail = f"{round(float(filter_dust))}%" if isinstance(filter_dust, (int, float)) else None
+                await self._async_send_notification(
+                    NOTIFY_EVENT_FILTER, extra_detail=detail
+                )
+        self._prev_filter = cur_filter
+
+        # 5) Other controller warnings / fatal errors (rising edge or new error code)
+        has_err_flag = bool(
+            data.get(KEY_IS_WARN_ERR, False) or data.get(KEY_IS_FATAL_ERR, False)
+        )
+        raw_msg = str(data.get(KEY_MSG) or "").strip()
+        cur_other_err = has_err_flag and not (cur_overheat or cur_freeze or cur_filter)
+        if cur_other_err:
+            if not self._prev_other_err or (raw_msg and raw_msg != self._prev_err_msg):
+                if self.is_notification_enabled(KEY_NOTIFY_OTHER_ERRORS):
+                    detail = raw_msg if raw_msg and raw_msg.upper() != "OK" else None
+                    await self._async_send_notification(
+                        NOTIFY_EVENT_OTHER_ERRORS, extra_detail=detail
+                    )
+            self._prev_other_err = True
+            self._prev_err_msg = raw_msg
+        else:
+            self._prev_other_err = False
+            self._prev_err_msg = None
+
+        # 6) Unit power on / off transitions (after initial snapshot is established)
+        cur_power = bool(data.get(KEY_POWER, False))
+        if self._has_initial_snapshot and self._prev_power is not None and cur_power != self._prev_power:
+            if self.is_notification_enabled(KEY_NOTIFY_POWER):
+                await self._async_send_notification(
+                    NOTIFY_EVENT_POWER_ON if cur_power else NOTIFY_EVENT_POWER_OFF
+                )
+        self._prev_power = cur_power
+        self._has_initial_snapshot = True
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch latest data from Breezart."""
@@ -1391,6 +1590,8 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data[KEY_FIRMWARE_VER] = self.client.firmware_ver
             data[KEY_PROTOCOL_VER] = self.client.protocol_ver
 
+            await self._async_evaluate_notifications(data)
+
             _LOGGER.debug(
                 "Breezart state update (%s): power=%s temp=%s speed=%s",
                 self.client.protocol_type,
@@ -1404,6 +1605,10 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._properties_loaded = False
             self._cached_sensors = {}
             await self.client.disconnect()
+            if self._was_online:
+                self._was_online = False
+                if self.is_notification_enabled(KEY_NOTIFY_OFFLINE):
+                    await self._async_send_notification(NOTIFY_EVENT_OFFLINE)
             raise UpdateFailed(f"Connection error: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with Breezart: {err}") from err

@@ -37,7 +37,15 @@
           "slave_id": "Modbus Unit / Slave ID",
           "speed_max": "Number of Fan Speeds (1–10)",
           "temp_min": "Minimum Heating Temperature (°C)",
-          "temp_max": "Maximum Heating Temperature (°C)"
+          "temp_max": "Maximum Heating Temperature (°C)",
+          "notify_service": "Notification Service (e.g., notify.notify or notify.mobile_app_phone)",
+          "notify_overheat": "Notify on overheat hazard",
+          "notify_freeze": "Notify on freeze hazard",
+          "notify_filter": "Notify on filter replacement warning",
+          "notify_offline": "Notify when device goes offline",
+          "notify_online": "Notify when device comes online",
+          "notify_power": "Notify on unit power on/off",
+          "notify_other_errors": "Notify on other errors and warnings"
         }
       }
     }
@@ -72,6 +80,27 @@
     "switch": {
       "power": {
         "name": "Power"
+      },
+      "notify_overheat": {
+        "name": "Notification: Overheat hazard"
+      },
+      "notify_freeze": {
+        "name": "Notification: Freeze hazard"
+      },
+      "notify_filter": {
+        "name": "Notification: Filter replacement"
+      },
+      "notify_offline": {
+        "name": "Notification: Device offline"
+      },
+      "notify_online": {
+        "name": "Notification: Device online"
+      },
+      "notify_power": {
+        "name": "Notification: Power on/off"
+      },
+      "notify_other_errors": {
+        "name": "Notification: Other errors"
       }
     },
     "number": {

@@ -16,10 +16,12 @@ CONF_SLAVE_ID: Final[str] = "slave_id"
 CONF_SPEED_MAX: Final[str] = "speed_max"
 CONF_TEMP_MIN: Final[str] = "temp_min"
 CONF_TEMP_MAX: Final[str] = "temp_max"
+CONF_NOTIFY_SERVICE: Final[str] = "notify_service"
 DATA_CLIENT: Final[str] = "client"
 DATA_COORDINATOR: Final[str] = "coordinator"
 DATA_MODEL: Final[str] = "model"
 DATA_PROTOCOL: Final[str] = "protocol"
+DATA_SKIP_RELOAD: Final[str] = "skip_reload"
 
 # Supported transport protocols
 PROTOCOL_AUTO: Final[str] = "auto"
@@ -219,6 +221,41 @@ TRANSLATION_KEY_CLIMATE: Final[str] = "climate"
 TRANSLATION_KEY_POWER_SWITCH: Final[str] = "power"
 TRANSLATION_KEY_TARGET_TEMP: Final[str] = "target_temperature"
 TRANSLATION_KEY_FAN_SPEED: Final[str] = "fan_speed"
+
+# Notification settings & event keys (v1.2.0)
+DEFAULT_NOTIFY_SERVICE: Final[str] = "notify.notify"
+NOTIFY_DOMAIN: Final[str] = "notify"
+PERSISTENT_NOTIFICATION_DOMAIN: Final[str] = "persistent_notification"
+SERVICE_CREATE: Final[str] = "create"
+MOBILE_APP_SERVICE_PREFIX: Final[str] = "mobile_app_"
+EVENT_BREEZART_NOTIFICATION: Final[str] = "breezart_notification"
+
+KEY_NOTIFY_OVERHEAT: Final[str] = "notify_overheat"
+KEY_NOTIFY_FREEZE: Final[str] = "notify_freeze"
+KEY_NOTIFY_FILTER: Final[str] = "notify_filter"
+KEY_NOTIFY_OFFLINE: Final[str] = "notify_offline"
+KEY_NOTIFY_ONLINE: Final[str] = "notify_online"
+KEY_NOTIFY_POWER: Final[str] = "notify_power"
+KEY_NOTIFY_OTHER_ERRORS: Final[str] = "notify_other_errors"
+
+NOTIFICATION_SETTING_KEYS: Final[tuple[str, ...]] = (
+    KEY_NOTIFY_OVERHEAT,
+    KEY_NOTIFY_FREEZE,
+    KEY_NOTIFY_FILTER,
+    KEY_NOTIFY_OFFLINE,
+    KEY_NOTIFY_ONLINE,
+    KEY_NOTIFY_POWER,
+    KEY_NOTIFY_OTHER_ERRORS,
+)
+
+NOTIFY_EVENT_OVERHEAT: Final[str] = "overheat"
+NOTIFY_EVENT_FREEZE: Final[str] = "freeze"
+NOTIFY_EVENT_FILTER: Final[str] = "filter"
+NOTIFY_EVENT_OFFLINE: Final[str] = "offline"
+NOTIFY_EVENT_ONLINE: Final[str] = "online"
+NOTIFY_EVENT_POWER_ON: Final[str] = "power_on"
+NOTIFY_EVENT_POWER_OFF: Final[str] = "power_off"
+NOTIFY_EVENT_OTHER_ERRORS: Final[str] = "other_errors"
 
 # Measurement units & steps
 UNIT_PPM: Final[str] = "ppm"
@@ -677,6 +714,23 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_DANGER_FREEZE: "Угроза обморожения",
             KEY_CHANGE_FILTER: "Требуется замена фильтра",
             KEY_POWER: "Установка включена",
+            KEY_NOTIFY_OVERHEAT: "Уведомление: Угроза перегрева",
+            KEY_NOTIFY_FREEZE: "Уведомление: Угроза обморожения",
+            KEY_NOTIFY_FILTER: "Уведомление: Замена фильтра",
+            KEY_NOTIFY_OFFLINE: "Уведомление: Устройство не в сети",
+            KEY_NOTIFY_ONLINE: "Уведомление: Устройство в сети",
+            KEY_NOTIFY_POWER: "Уведомление: Включение и выключение",
+            KEY_NOTIFY_OTHER_ERRORS: "Уведомление: Остальные ошибки",
+        },
+        "notifications": {
+            NOTIFY_EVENT_OVERHEAT: "Обнаружена угроза перегрева калорифера! Проверьте работу вентилятора и чистоту фильтра.",
+            NOTIFY_EVENT_FREEZE: "Обнаружена угроза обморожения! Слишком низкая температура воздуха или воды при выключенном или недостаточном обогреве.",
+            NOTIFY_EVENT_FILTER: "Требуется замена воздушного фильтра (загрязнённость достигла порога замены).",
+            NOTIFY_EVENT_OFFLINE: "Устройство не в сети (потеряна связь или отключено питание).",
+            NOTIFY_EVENT_ONLINE: "Устройство снова в сети и отвечает на запросы.",
+            NOTIFY_EVENT_POWER_ON: "Вентиляционная установка включена.",
+            NOTIFY_EVENT_POWER_OFF: "Вентиляционная установка выключена.",
+            NOTIFY_EVENT_OTHER_ERRORS: "Зафиксирована ошибка или предупреждение контроллера",
         },
         "unit_state": {
             STATE_KEY_OFF: "Выключено",
@@ -771,6 +825,23 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_DANGER_FREEZE: "Freeze hazard",
             KEY_CHANGE_FILTER: "Filter replacement required",
             KEY_POWER: "Unit running",
+            KEY_NOTIFY_OVERHEAT: "Notification: Overheat hazard",
+            KEY_NOTIFY_FREEZE: "Notification: Freeze hazard",
+            KEY_NOTIFY_FILTER: "Notification: Filter replacement",
+            KEY_NOTIFY_OFFLINE: "Notification: Device offline",
+            KEY_NOTIFY_ONLINE: "Notification: Device online",
+            KEY_NOTIFY_POWER: "Notification: Power on/off",
+            KEY_NOTIFY_OTHER_ERRORS: "Notification: Other errors",
+        },
+        "notifications": {
+            NOTIFY_EVENT_OVERHEAT: "Heater overheat hazard detected! Check fan operation and air filter condition.",
+            NOTIFY_EVENT_FREEZE: "Freeze hazard detected! Air or water temperature is critically low with heating off or insufficient.",
+            NOTIFY_EVENT_FILTER: "Air filter replacement required (filter pollution reached replacement threshold).",
+            NOTIFY_EVENT_OFFLINE: "Device is offline (connection lost or power disconnected).",
+            NOTIFY_EVENT_ONLINE: "Device is back online and responding.",
+            NOTIFY_EVENT_POWER_ON: "Ventilation unit turned on.",
+            NOTIFY_EVENT_POWER_OFF: "Ventilation unit turned off.",
+            NOTIFY_EVENT_OTHER_ERRORS: "Controller error or warning detected",
         },
         "unit_state": {
             STATE_KEY_OFF: "Off",

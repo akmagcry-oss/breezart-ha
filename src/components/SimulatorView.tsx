@@ -1066,6 +1066,56 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
             />
           </div>
         </div>
+
+        {/* Device Configuration: 7 Individual Notification Switches (EntityCategory.CONFIG) */}
+        <div className="mt-6 pt-5 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <p className="text-xs font-mono text-slate-500">
+                custom_components/breezart/switch.py (EntityCategory.CONFIG) · coordinator.py (notify.mobile_app_*)
+              </p>
+              <h3 className="text-sm font-bold text-slate-900 mt-0.5">
+                {lang === 'ru'
+                  ? 'Настройки устройства: индивидуальные переключатели уведомлений (7 событий)'
+                  : 'Device Configuration: Individual Notification Toggles (7 Events)'}
+              </h3>
+            </div>
+            <span className="text-xs font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded">
+              notify.notify + notify.mobile_app_*
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {(
+              [
+                'notify_overheat',
+                'notify_freeze',
+                'notify_filter',
+                'notify_offline',
+                'notify_online',
+                'notify_power',
+                'notify_other_errors',
+              ] as const
+            ).map((nKey) => (
+              <div
+                key={nKey}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-800 truncate">
+                    {translateEntity(nKey, lang)}
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-500 truncate">
+                    switch.breezart_{nKey}
+                  </p>
+                </div>
+                <span className="text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded shrink-0">
+                  ON
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* Row 3: All 28 Sensors Table */}

@@ -95,8 +95,8 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold text-slate-900">
               {lang === 'ru'
-                ? 'Интеграция вентиляции Breezart для Home Assistant (v1.1.2)'
-                : 'Breezart Ventilation Home Assistant Integration (v1.1.2)'}
+                ? 'Интеграция вентиляции Breezart для Home Assistant (v1.2.0)'
+                : 'Breezart Ventilation Home Assistant Integration (v1.2.0)'}
             </h1>
             <p className="text-xs text-slate-500 mt-1">
               <a
@@ -128,8 +128,8 @@ export default function App() {
               </span>
               <span>
                 {lang === 'ru'
-                  ? '3) Полная интернационализация RU / EN · 4) Modbus TCP (порт 502, JLV135 / JL204c7) + Native TCP (порт 1560)'
-                  : '3) Full RU / EN i18n · 4) Modbus TCP (Port 502, JLV135 / JL204c7) + Native TCP (Port 1560)'}
+                  ? '3) Полная интернационализация RU / EN · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Push-уведомления на телефон'
+                  : '3) Full RU / EN i18n · 4) Modbus TCP (:502) + Native TCP (:1560) · 5) Mobile Push Notifications'}
               </span>
             </p>
           </div>
@@ -211,7 +211,7 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 px-6 py-4 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <span>
-            Breezart Home Assistant Integration v1.1.2 · Modbus TCP (Port 502, JLV135 / JL204c7) & Native TCP (Port 1560) · Active Preset: Breezart {preset.name}
+            Breezart Home Assistant Integration v1.2.0 · Modbus TCP (Port 502, JLV135 / JL204c7) & Native TCP (Port 1560) · Active Preset: Breezart {preset.name}
           </span>
           <a
             href="https://github.com/akmagcry-oss/breezart-ha"

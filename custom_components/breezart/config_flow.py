@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_MODEL,
+    CONF_NOTIFY_SERVICE,
     CONF_PROTOCOL,
     CONF_SLAVE_ID,
     CONF_SPEED_MAX,
@@ -27,6 +28,7 @@ from .const import (
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NAME,
+    DEFAULT_NOTIFY_SERVICE,
     DEFAULT_PASSWORD,
     DEFAULT_PORT,
     DEFAULT_PROTOCOL,
@@ -38,12 +40,20 @@ from .const import (
     ERR_CANNOT_CONNECT,
     ERR_INVALID_AUTH,
     ERR_UNKNOWN,
+    KEY_NOTIFY_FILTER,
+    KEY_NOTIFY_FREEZE,
+    KEY_NOTIFY_OFFLINE,
+    KEY_NOTIFY_ONLINE,
+    KEY_NOTIFY_OTHER_ERRORS,
+    KEY_NOTIFY_OVERHEAT,
+    KEY_NOTIFY_POWER,
     MAX_ALLOWED_SPEED_MAX,
     MAX_ALLOWED_TEMP_BOUND,
     MIN_ALLOWED_SPEED_MAX,
     MIN_ALLOWED_TEMP_BOUND,
     MODEL_CUSTOM,
     MODEL_OPTIONS,
+    NOTIFICATION_SETTING_KEYS,
     PROTOCOL_OPTIONS,
     STEP_INIT,
     STEP_USER,
@@ -161,6 +171,11 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_SPEED_MAX: resolved_speed_max,
                         CONF_TEMP_MIN: resolved_temp_min,
                         CONF_TEMP_MAX: resolved_temp_max,
+                        CONF_NOTIFY_SERVICE: str(
+                            user_input.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE)
+                        ).strip()
+                        or DEFAULT_NOTIFY_SERVICE,
+                        **{key: True for key in NOTIFICATION_SETTING_KEYS},
                     },
                 )
 
@@ -265,6 +280,12 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
                 self.config_entry.data.get(CONF_TEMP_MAX, preset["temp_max"]),
             )
         )
+        current_notify_service = str(
+            self.config_entry.options.get(
+                CONF_NOTIFY_SERVICE,
+                self.config_entry.data.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE),
+            )
+        )
 
         model_selector = SelectSelector(
             SelectSelectorConfig(
@@ -297,6 +318,72 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_TEMP_MAX, default=current_temp_max
                     ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND)),
+                    vol.Optional(
+                        CONF_NOTIFY_SERVICE, default=current_notify_service
+                    ): str,
+                    vol.Optional(
+                        KEY_NOTIFY_OVERHEAT,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_OVERHEAT,
+                                self.config_entry.data.get(KEY_NOTIFY_OVERHEAT, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_FREEZE,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_FREEZE,
+                                self.config_entry.data.get(KEY_NOTIFY_FREEZE, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_FILTER,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_FILTER,
+                                self.config_entry.data.get(KEY_NOTIFY_FILTER, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_OFFLINE,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_OFFLINE,
+                                self.config_entry.data.get(KEY_NOTIFY_OFFLINE, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_ONLINE,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_ONLINE,
+                                self.config_entry.data.get(KEY_NOTIFY_ONLINE, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_POWER,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_POWER,
+                                self.config_entry.data.get(KEY_NOTIFY_POWER, True),
+                            )
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        KEY_NOTIFY_OTHER_ERRORS,
+                        default=bool(
+                            self.config_entry.options.get(
+                                KEY_NOTIFY_OTHER_ERRORS,
+                                self.config_entry.data.get(KEY_NOTIFY_OTHER_ERRORS, True),
+                            )
+                        ),
+                    ): bool,
                 }
             ),
         )

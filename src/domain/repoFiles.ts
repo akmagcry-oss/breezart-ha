@@ -185,17 +185,17 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'python',
     content: switchPy,
     summary: {
-      ru: 'Выключатель питания установки с _attr_translation_key и общим DeviceInfo.',
-      en: 'Unit power switch entity with _attr_translation_key and shared DeviceInfo.',
+      ru: 'Выключатель питания установки + 7 индивидуальных переключателей уведомлений (EntityCategory.CONFIG) в настройках устройства.',
+      en: 'Unit power switch + 7 individual notification switches (EntityCategory.CONFIG) in device settings.',
     },
     highlights: {
       ru: [
-        'Использует TRANSLATION_KEY_POWER_SWITCH и KEY_POWER из const.py',
-        'Локализован для RU ("Питание") и EN ("Power")',
+        'Использует TRANSLATION_KEY_POWER_SWITCH и 7 ключей NOTIFICATION_SETTING_KEYS из const.py',
+        'Позволяет по отдельности включать и отключать каждое из 7 уведомлений на странице устройства HA',
       ],
       en: [
-        'Uses TRANSLATION_KEY_POWER_SWITCH and KEY_POWER from const.py',
-        'Localized for RU ("Питание") and EN ("Power")',
+        'Uses TRANSLATION_KEY_POWER_SWITCH and 7 NOTIFICATION_SETTING_KEYS from const.py',
+        'Allows enabling/disabling each of the 7 notifications individually on the HA device page',
       ],
     },
   },
@@ -205,17 +205,17 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'python',
     content: initPy,
     summary: {
-      ru: 'Инициализация интеграции, передача выбранного пресета модели и автоматическая перезагрузка при смене опций.',
-      en: 'Integration setup passing selected model preset and auto-reloading when options change.',
+      ru: 'Инициализация интеграции, передача выбранного пресета модели и настроек уведомлений без лишней перезагрузки при переключении тумблеров.',
+      en: 'Integration setup passing selected model preset and notification settings without unnecessary reloads when toggling switches.',
     },
     highlights: {
       ru: [
-        'Поддержка entry.options[CONF_MODEL] и слушатель обновления настроек async_reload_entry',
-        'Все ключи hass.data вынесены в const.py (DATA_CLIENT, DATA_COORDINATOR, DATA_MODEL)',
+        'Поддержка entry.options[CONF_MODEL], 7 флагов уведомлений и слушатель обновления настроек async_reload_entry',
+        'Все ключи hass.data вынесены в const.py (DATA_CLIENT, DATA_COORDINATOR, DATA_MODEL, DATA_SKIP_RELOAD)',
       ],
       en: [
-        'Supports entry.options[CONF_MODEL] and update listener async_reload_entry',
-        'All hass.data keys centralized in const.py (DATA_CLIENT, DATA_COORDINATOR, DATA_MODEL)',
+        'Supports entry.options[CONF_MODEL], 7 notification flags, and update listener async_reload_entry',
+        'All hass.data keys centralized in const.py (DATA_CLIENT, DATA_COORDINATOR, DATA_MODEL, DATA_SKIP_RELOAD)',
       ],
     },
   },
@@ -225,16 +225,16 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'json',
     content: ruJson,
     summary: {
-      ru: 'Полный русский языковой пакет для мастера настройки, опций, пресетов моделей и всех 37 сущностей.',
-      en: 'Complete Russian language pack for config flow, options, model presets, and all 37 entities.',
+      ru: 'Полный русский языковой пакет для мастера настройки, опций, пресетов моделей и всех 44 сущностей.',
+      en: 'Complete Russian language pack for config flow, options, model presets, and all 44 entities.',
     },
     highlights: {
       ru: [
-        'Переводы всех 28 сенсоров, 5 бинарных сенсоров, 2 регуляторов, выключателя и термостата',
+        'Переводы всех 28 сенсоров, 6 бинарных сенсоров, 2 регуляторов, 8 переключателей и термостата',
         'Переводы всех состояний ENUM-сенсоров и статусов фильтров 1–4',
       ],
       en: [
-        'Translations for all 28 sensors, 5 binary sensors, 2 numbers, switch, and climate entity',
+        'Translations for all 28 sensors, 6 binary sensors, 2 numbers, 8 switches, and climate entity',
         'Translations for all ENUM sensor states and filter 1–4 status attributes',
       ],
     },
@@ -291,16 +291,16 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'json',
     content: manifestJson,
     summary: {
-      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.1.2, репозиторий akmagcry-oss/breezart-ha).',
-      en: 'Home Assistant / HACS integration manifest (v1.1.2, repository akmagcry-oss/breezart-ha).',
+      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.2.0, репозиторий akmagcry-oss/breezart-ha).',
+      en: 'Home Assistant / HACS integration manifest (v1.2.0, repository akmagcry-oss/breezart-ha).',
     },
     highlights: {
       ru: [
-        'Версия 1.1.2 с поддержкой Modbus TCP (порт 502) и Native TCP (порт 1560)',
+        'Версия 1.2.0 с поддержкой push-уведомлений о важных событиях, Modbus TCP (порт 502) и Native TCP (порт 1560)',
         'Ссылки на https://github.com/akmagcry-oss/breezart-ha и @akmagcry-oss',
       ],
       en: [
-        'Release v1.1.2 with Modbus TCP (port 502) and Native TCP (port 1560) support',
+        'Release v1.2.0 with important event push notifications, Modbus TCP (port 502), and Native TCP (port 1560) support',
         'Repository links set to https://github.com/akmagcry-oss/breezart-ha and @akmagcry-oss',
       ],
     },

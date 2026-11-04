@@ -724,6 +724,13 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       danger_freeze: 'Угроза обморожения',
       change_filter: 'Требуется замена фильтра',
       unit_running: 'Установка включена',
+      notify_overheat: 'Уведомление: Угроза перегрева',
+      notify_freeze: 'Уведомление: Угроза обморожения',
+      notify_filter: 'Уведомление: Замена фильтра',
+      notify_offline: 'Уведомление: Устройство не в сети',
+      notify_online: 'Уведомление: Устройство в сети',
+      notify_power: 'Уведомление: Включение / выключение',
+      notify_other_errors: 'Уведомление: Остальные ошибки',
     },
     unit_state: {
       off: 'Выключено',
@@ -837,6 +844,13 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       danger_freeze: 'Freeze hazard',
       change_filter: 'Filter replacement required',
       unit_running: 'Unit running',
+      notify_overheat: 'Notification: Overheat hazard',
+      notify_freeze: 'Notification: Freeze hazard',
+      notify_filter: 'Notification: Filter replacement',
+      notify_offline: 'Notification: Device offline',
+      notify_online: 'Notification: Device online',
+      notify_power: 'Notification: Power on/off',
+      notify_other_errors: 'Notification: Other errors',
     },
     unit_state: {
       off: 'Off',
@@ -911,6 +925,25 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
   },
 };
 
+export type NotificationSettingKey =
+  | 'notify_overheat'
+  | 'notify_freeze'
+  | 'notify_filter'
+  | 'notify_offline'
+  | 'notify_online'
+  | 'notify_power'
+  | 'notify_other_errors';
+
+export const NOTIFICATION_SETTING_KEYS: readonly NotificationSettingKey[] = [
+  'notify_overheat',
+  'notify_freeze',
+  'notify_filter',
+  'notify_offline',
+  'notify_online',
+  'notify_power',
+  'notify_other_errors',
+] as const;
+
 export function translateEntity(key: string, lang: Language): string {
   return I18N_CATALOG[lang].entities[key] ?? key;
 }
@@ -923,4 +956,5 @@ export function translateState(
   const dict = I18N_CATALOG[lang][category] as Record<string, string>;
   return dict[key] ?? key;
 }
+
 
