@@ -120,6 +120,8 @@ from .const import (
     MODBUS_ALARM_BIT_FILTER,
     MODBUS_ALARM_BIT_FREEZE,
     MODBUS_ALARM_BIT_OVERHEAT,
+    MODBUS_EXC_ILLEGAL_DATA_ADDRESS,
+    MODBUS_EXC_ILLEGAL_FUNCTION,
     MODBUS_EXCEPTION_MASK,
     MODBUS_FC_READ_HOLDING,
     MODBUS_FC_READ_INPUT,
@@ -150,6 +152,7 @@ from .const import (
     MODBUS_KW_TO_W_MULTIPLIER,
     MODBUS_MAX_PERCENT_RAW,
     MODBUS_MBAP_HEADER_LEN,
+    MODBUS_OPTIONAL_BLOCK_MAX_FAILURES,
     MODBUS_PERCENT_MULTIPLIER,
     MODBUS_PROTOCOL_ID,
     MODBUS_READ_DELAY_SECONDS,
@@ -333,6 +336,15 @@ def _detect_freeze_hazard(
     ):
         return True
     return False
+
+
+class ModbusExceptionError(ValueError):
+    """The device answered with a Modbus exception frame (the connection is still in sync)."""
+
+    def __init__(self, code: int, message: str) -> None:
+        """Store the Modbus exception code."""
+        super().__init__(message)
+        self.code = code
 
 
 class BreezartTCPClient:
@@ -727,6 +739,9 @@ class BreezartModbusClient:
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
         self._tx_id: int = 0
+        # Optional register blocks: start address -> consecutive failures / disabled set
+        self._optional_failures: dict[int, int] = {}
+        self._unsupported_blocks: set[int] = set()
         self._last_filter1_dust: float | None = None
         self._last_temp_supply: float | None = None
         self._last_temp_outdoor: float | None = None
@@ -864,8 +879,9 @@ class BreezartModbusClient:
 
         if pdu[0] & MODBUS_EXCEPTION_MASK:
             exc_code = pdu[1] if len(pdu) > 1 else 0
-            raise ValueError(
-                f"Modbus exception 0x{exc_code:02x} on FC 0x{func_code:02x} addr={start_addr}"
+            raise ModbusExceptionError(
+                exc_code,
+                f"Modbus exception 0x{exc_code:02x} on FC 0x{func_code:02x} addr={start_addr}",
             )
 
         expected_bytes = count * 2
@@ -901,7 +917,71 @@ class BreezartModbusClient:
 
         if pdu[0] & MODBUS_EXCEPTION_MASK:
             exc_code = pdu[1] if len(pdu) > 1 else 0
-            raise ValueError(f"Modbus write exception 0x{exc_code:02x} on reg={reg_addr}")
+            raise ModbusExceptionError(
+                exc_code, f"Modbus write exception 0x{exc_code:02x} on reg={reg_addr}"
+            )
+
+    async def _read_optional_block(
+        self, start_addr: int, count: int, label: str
+    ) -> list[int] | None:
+        """Read an Input register block that not every controller provides.
+
+        Returns None when the block is unavailable. A Modbus "illegal function/address"
+        reply disables the block at once; other failures (including a device that stays
+        silent) disable it after MODBUS_OPTIONAL_BLOCK_MAX_FAILURES consecutive attempts.
+        Disabled blocks are skipped until the integration is reloaded, so a silent
+        register no longer costs a timeout and a reconnect on every poll.
+        """
+        if start_addr in self._unsupported_blocks:
+            return None
+        if not self.is_connected:
+            # An earlier read in this poll dropped the socket; don't blame this block.
+            await self.connect()
+        try:
+            regs = await self._read_registers(MODBUS_FC_READ_INPUT, start_addr, count)
+        except ModbusExceptionError as err:
+            definitive = err.code in (
+                MODBUS_EXC_ILLEGAL_FUNCTION,
+                MODBUS_EXC_ILLEGAL_DATA_ADDRESS,
+            )
+            self._record_optional_failure(start_addr, label, err, definitive=definitive)
+            return None
+        except ValueError as err:
+            self._record_optional_failure(start_addr, label, err, definitive=False)
+            return None
+        except (TimeoutError, ConnectionError, OSError, asyncio.IncompleteReadError) as err:
+            self._record_optional_failure(start_addr, label, err, definitive=False)
+            # _transact dropped the desynced socket; reconnect so the rest of this poll
+            # can continue. If the device is really gone, connect() raises to the caller.
+            if not self.is_connected:
+                await self.connect()
+            return None
+        self._optional_failures.pop(start_addr, None)
+        return regs
+
+    def _record_optional_failure(
+        self, start_addr: int, label: str, err: Exception, *, definitive: bool
+    ) -> None:
+        """Count a failed optional read and disable the block when appropriate."""
+        failures = self._optional_failures.get(start_addr, 0) + 1
+        self._optional_failures[start_addr] = failures
+        if definitive or failures >= MODBUS_OPTIONAL_BLOCK_MAX_FAILURES:
+            self._unsupported_blocks.add(start_addr)
+            _LOGGER.info(
+                "Breezart Modbus: %s (INPUT[%d]) unavailable, no longer polling it: %s",
+                label,
+                start_addr,
+                err,
+            )
+        else:
+            _LOGGER.debug(
+                "Breezart Modbus: %s (INPUT[%d]) read failed (%d/%d): %s",
+                label,
+                start_addr,
+                failures,
+                MODBUS_OPTIONAL_BLOCK_MAX_FAILURES,
+                err,
+            )
 
     def _apply_hw_temp_bounds(self, min_task_raw: int, max_task_raw: int) -> None:
         """Decode and apply hardware min/max temperature bounds from INPUT[70..71] if not overridden."""
@@ -952,12 +1032,13 @@ class BreezartModbusClient:
             _LOGGER.debug("Optional JL204c7 sensor/limit block (50..71) not read during init: %s", err)
 
         # Optionally read system signature block INPUT[65000..65014]
-        try:
-            info_regs = await self._read_registers(
-                MODBUS_FC_READ_INPUT,
-                MODBUS_IR_INFO_BLOCK_START,
-                MODBUS_IR_INFO_BLOCK_COUNT,
-            )
+        info_regs = await self._read_optional_block(
+            MODBUS_IR_INFO_BLOCK_START, MODBUS_IR_INFO_BLOCK_COUNT, "system info block"
+        )
+        if info_regs is None:
+            if not self.firmware_ver:
+                self.firmware_ver = "JL204c7"
+        else:
             hw_sig = info_regs[0]  # INPUT[65000] Sign_hard_ID
             sw_ver = info_regs[12]  # INPUT[65012] Sign_soft_vers
             proj_ver = info_regs[14]  # INPUT[65014] Sign_proj_vers
@@ -972,10 +1053,6 @@ class BreezartModbusClient:
                     self.firmware_ver = str(sw_ver)
             if hw_sig > 0:
                 self.protocol_ver = f"Modbus TCP (JL{hw_sig}, ID={self.slave_id})"
-        except Exception as err:
-            _LOGGER.debug("Optional JL204c7 info block (65000) not read: %s", err)
-            if not self.firmware_ver:
-                self.firmware_ver = "JL204c7"
 
         _LOGGER.info(
             "Breezart Modbus (%s) properties: T=%d..%d°C, Speed=%d..%d, fw=%s, proto=%s",
@@ -1161,42 +1238,28 @@ class BreezartModbusClient:
             self._apply_hw_temp_bounds(sensors_ir[20], sensors_ir[21])
 
         power_consumption: float | None = None
-        try:
-            fan_ir = await self._read_registers(
-                MODBUS_FC_READ_INPUT,
-                MODBUS_IR_FAN_BLOCK_START,
-                MODBUS_IR_FAN_BLOCK_COUNT,
-            )
+        fan_ir = await self._read_optional_block(
+            MODBUS_IR_FAN_BLOCK_START, MODBUS_IR_FAN_BLOCK_COUNT, "fan power block"
+        )
+        if fan_ir is not None:
             raw_kw_x100 = fan_ir[3]  # INPUT[10004] Fan0_power (kW x 100)
             if raw_kw_x100 not in MODBUS_INVALID_VALUES:
                 power_consumption = round(raw_kw_x100 * MODBUS_KW_TO_W_MULTIPLIER, 1)
-        except Exception as err:
-            _LOGGER.debug("Optional fan power block (10001) not available: %s", err)
 
         filter1_pollution: float | None = None
         filter2_pollution: float | None = None
-        try:
-            f1_ir = await self._read_registers(
-                MODBUS_FC_READ_INPUT,
-                MODBUS_IR_FILTER1_POLLUTION,
-                1,
-            )
-            if f1_ir[0] not in MODBUS_INVALID_VALUES:
-                filter1_pollution = round(f1_ir[0] / MODBUS_PERCENT_MULTIPLIER, 1)
-                self._last_filter1_dust = filter1_pollution
-        except Exception as err:
-            _LOGGER.debug("Optional filter1 register (12005) not available: %s", err)
+        f1_ir = await self._read_optional_block(
+            MODBUS_IR_FILTER1_POLLUTION, 1, "filter 1 pollution register"
+        )
+        if f1_ir is not None and f1_ir[0] not in MODBUS_INVALID_VALUES:
+            filter1_pollution = round(f1_ir[0] / MODBUS_PERCENT_MULTIPLIER, 1)
+            self._last_filter1_dust = filter1_pollution
 
-        try:
-            f2_ir = await self._read_registers(
-                MODBUS_FC_READ_INPUT,
-                MODBUS_IR_FILTER2_POLLUTION,
-                1,
-            )
-            if f2_ir[0] not in MODBUS_INVALID_VALUES:
-                filter2_pollution = round(f2_ir[0] / MODBUS_PERCENT_MULTIPLIER, 1)
-        except Exception as err:
-            _LOGGER.debug("Optional filter2 register (12205) not available: %s", err)
+        f2_ir = await self._read_optional_block(
+            MODBUS_IR_FILTER2_POLLUTION, 1, "filter 2 pollution register"
+        )
+        if f2_ir is not None and f2_ir[0] not in MODBUS_INVALID_VALUES:
+            filter2_pollution = round(f2_ir[0] / MODBUS_PERCENT_MULTIPLIER, 1)
 
         return {
             KEY_TEMP_SUPPLY: temp_supply,
