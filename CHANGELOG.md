@@ -2,6 +2,22 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.2.2]
+
+### Fixed
+- **TCP Stream Desynchronization & Modbus Transaction Verification (`coordinator.py`)**:
+  - Added `_drop_connection()` in both `BreezartModbusClient` and `BreezartTCPClient` so timeouts and transport errors immediately close the socket, preventing late responses from being read as the answer to the next request.
+  - Unified Modbus TCP reads (`FC 0x03`, `0x04`) and writes (`FC 0x06`) through `_transact(frame, tx_id)` with strict MBAP transaction ID (`tx_id`) validation while keeping the connection intact on valid Modbus exception frames.
+  - Added `_read_response()` in `BreezartTCPClient` to accumulate multi-segment TCP replies until the device goes idle (`READ_DELAY_SECONDS`), preventing truncated responses on fragmented packets.
+  - Added automatic `client.disconnect()` on unparseable/corrupted poll responses in `BreezartDataCoordinator._async_update_data` so the next poll cleanly reconnects.
+- **Sensor Decoding & Climate State Accuracy (`coordinator.py`, `climate.py`)**:
+  - Fixed native `VSens` room (`VSENS_IDX_TEMP_ROOM`) and water (`VSENS_IDX_TEMP_WATER`) temperature decoding in `BreezartTCPClient.get_sensors()` to parse signed `× 10` values (`is_temp=True`) like supply and outdoor temperatures.
+  - Stopped falling back to `temp_target` in `BreezartModbusClient.get_state()` when the current temperature sensor (`cur_t`) is unavailable, returning `None` instead.
+  - Raised `HomeAssistantError` in `climate.py` when setting temperature, HVAC mode, fan speed, or power fails so Home Assistant surfaces the error in the UI and immediately rolls back optimistic state.
+- **Live Options Reload & Protocol Port Resolution (`__init__.py`, `const.py`, `switch.py`)**:
+  - Replaced the single-shot `DATA_SKIP_RELOAD` flag with a configuration snapshot (`DATA_RELOAD_SNAPSHOT` via `_reload_snapshot`) so toggling notification settings from either device switches or `OptionsFlow` applies live without reloading the integration.
+  - Added `_resolve_port(protocol, port)` in `__init__.py` to automatically switch between default ports `502` (Modbus TCP) and `1560` (Native TCP) when the protocol is changed in `OptionsFlow`.
+
 ## [1.2.1]
 
 ### Added
