@@ -291,16 +291,16 @@ export const REPO_FILES: readonly RepoFileEntry[] = [
     language: 'json',
     content: manifestJson,
     summary: {
-      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.2.3, репозиторий akmagcry-oss/breezart-ha).',
-      en: 'Home Assistant / HACS integration manifest (v1.2.3, repository akmagcry-oss/breezart-ha).',
+      ru: 'Манифест интеграции Home Assistant / HACS (версия 1.2.4, репозиторий akmagcry-oss/breezart-ha).',
+      en: 'Home Assistant / HACS integration manifest (v1.2.4, repository akmagcry-oss/breezart-ha).',
     },
     highlights: {
       ru: [
-        'Версия 1.2.3 с поддержкой push-уведомлений о важных событиях, Modbus TCP (порт 502) и Native TCP (порт 1560)',
+        'Версия 1.2.4 с поддержкой push-уведомлений о важных событиях, Modbus TCP (порт 502) и Native TCP (порт 1560)',
         'Ссылки на https://github.com/akmagcry-oss/breezart-ha и @akmagcry-oss',
       ],
       en: [
-        'Release v1.2.3 with important event push notifications, Modbus TCP (port 502), and Native TCP (port 1560) support',
+        'Release v1.2.4 with important event push notifications, Modbus TCP (port 502), and Native TCP (port 1560) support',
         'Repository links set to https://github.com/akmagcry-oss/breezart-ha and @akmagcry-oss',
       ],
     },
