@@ -11,7 +11,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DATA_COORDINATOR,
-    DATA_SKIP_RELOAD,
     DOMAIN,
     KEY_POWER,
     NOTIFICATION_SETTING_KEYS,
@@ -82,9 +81,6 @@ class BreezartNotificationSwitch(CoordinatorEntity[BreezartDataCoordinator], Swi
         """Update notification state in coordinator and persist to ConfigEntry options."""
         self.coordinator.set_notification_enabled(self._key, enabled)
         self.async_write_ha_state()
-        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
-        if entry_data is not None:
-            entry_data[DATA_SKIP_RELOAD] = True
         new_options = {**self._entry.options, self._key: enabled}
         self.hass.config_entries.async_update_entry(self._entry, options=new_options)
 

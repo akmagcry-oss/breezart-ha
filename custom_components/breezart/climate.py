@@ -14,6 +14,7 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -186,10 +187,9 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
             await self.coordinator.client.set_temperature(int(temperature))
             _LOGGER.debug("Set temperature to %d°C", int(temperature))
         except Exception as err:
-            _LOGGER.error("Failed to set temperature: %s", err)
             self._optimistic_target_temp = None
             self.async_write_ha_state()
-            return
+            raise HomeAssistantError(f"Breezart: failed to set temperature: {err}") from err
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -212,10 +212,9 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
                 elif hvac_mode == HVACMode.FAN_ONLY:
                     await self.coordinator.client.set_mode(CMD_MODE_VENT)
         except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode: %s", err)
             self._optimistic_hvac_mode = None
             self.async_write_ha_state()
-            return
+            raise HomeAssistantError(f"Breezart: failed to set HVAC mode: {err}") from err
         await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
@@ -231,10 +230,9 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
             await self.coordinator.client.set_fan_speed(speed)
             _LOGGER.debug("Set fan speed to %d", speed)
         except Exception as err:
-            _LOGGER.error("Failed to set fan speed: %s", err)
             self._optimistic_fan_mode = None
             self.async_write_ha_state()
-            return
+            raise HomeAssistantError(f"Breezart: failed to set fan speed: {err}") from err
         await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
@@ -245,10 +243,9 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         try:
             await self.coordinator.client.set_power(True)
         except Exception as err:
-            _LOGGER.error("Failed to turn on: %s", err)
             self._optimistic_hvac_mode = None
             self.async_write_ha_state()
-            return
+            raise HomeAssistantError(f"Breezart: failed to turn on: {err}") from err
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
@@ -259,10 +256,9 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         try:
             await self.coordinator.client.set_power(False)
         except Exception as err:
-            _LOGGER.error("Failed to turn off: %s", err)
             self._optimistic_hvac_mode = None
             self.async_write_ha_state()
-            return
+            raise HomeAssistantError(f"Breezart: failed to turn off: {err}") from err
         await self.coordinator.async_request_refresh()
 
     @property

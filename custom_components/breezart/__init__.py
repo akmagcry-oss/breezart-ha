@@ -17,7 +17,8 @@ from .const import (
     DATA_COORDINATOR,
     DATA_MODEL,
     DATA_PROTOCOL,
-    DATA_SKIP_RELOAD,
+    DATA_RELOAD_SNAPSHOT,
+    DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NOTIFY_SERVICE,
     DEFAULT_PASSWORD,
@@ -26,6 +27,8 @@ from .const import (
     DEFAULT_SLAVE_ID,
     DOMAIN,
     NOTIFICATION_SETTING_KEYS,
+    PROTOCOL_MODBUS_TCP,
+    PROTOCOL_NATIVE_TCP,
 )
 from .coordinator import BreezartDataCoordinator, create_breezart_client
 
@@ -36,6 +39,28 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.SWITCH,
 ]
+
+
+def _reload_snapshot(entry: ConfigEntry) -> dict:
+    """Return the merged entry settings that require a reload when changed.
+
+    Notification toggles are excluded: they are applied live by the coordinator.
+    """
+    merged = {**entry.data, **entry.options}
+    return {k: v for k, v in merged.items() if k not in NOTIFICATION_SETTING_KEYS}
+
+
+def _resolve_port(protocol: str, port: int) -> int:
+    """Swap the stored port to the protocol's default when it still holds the other one's.
+
+    The options flow can switch the protocol but not the port, so an entry created on
+    1560 (native) and switched to Modbus would otherwise connect Modbus to 1560.
+    """
+    if protocol == PROTOCOL_MODBUS_TCP and port == DEFAULT_PORT:
+        return DEFAULT_MODBUS_PORT
+    if protocol == PROTOCOL_NATIVE_TCP and port == DEFAULT_MODBUS_PORT:
+        return DEFAULT_PORT
+    return port
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -71,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for key in NOTIFICATION_SETTING_KEYS
     }
 
-    port = int(entry.data.get(CONF_PORT, DEFAULT_PORT))
+    port = _resolve_port(protocol, int(entry.data.get(CONF_PORT, DEFAULT_PORT)))
     password = entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
 
     client = create_breezart_client(
@@ -98,7 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_COORDINATOR: coordinator,
         DATA_MODEL: model_id,
         DATA_PROTOCOL: client.protocol_type,
-        DATA_SKIP_RELOAD: False,
+        DATA_RELOAD_SNAPSHOT: _reload_snapshot(entry),
     }
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -107,12 +132,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry when options change."""
+    """Reload on connection/model changes; apply notification toggles live."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if entry_data and entry_data.get(DATA_SKIP_RELOAD):
-        entry_data[DATA_SKIP_RELOAD] = False
+    if not entry_data or entry_data[DATA_RELOAD_SNAPSHOT] != _reload_snapshot(entry):
+        await hass.config_entries.async_reload(entry.entry_id)
         return
-    await hass.config_entries.async_reload(entry.entry_id)
+
+    coordinator: BreezartDataCoordinator = entry_data[DATA_COORDINATOR]
+    for key in NOTIFICATION_SETTING_KEYS:
+        coordinator.set_notification_enabled(
+            key, bool(entry.options.get(key, entry.data.get(key, True)))
+        )
+    coordinator.async_update_listeners()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
