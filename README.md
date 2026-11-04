@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/release/akmagcry-oss/breezart-ha.svg)](https://github.com/akmagcry-oss/breezart-ha/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Полнофункциональная интеграция систем вентиляции **Breezart** для Home Assistant (`v1.2.0`).  
+Полнофункциональная интеграция систем вентиляции **Breezart** для Home Assistant (`v1.2.1`).  
 Поддерживает как **Modbus TCP (порт 502)** (пульты **JLV135**, контроллеры **JL204c7**), так и **нативный TCP-протокол (порт 1560)** (пульты **TPD-283U-H**, контроллеры **JL205**) с автоматическим определением протокола.
 
 ## Установка через HACS
@@ -105,7 +105,7 @@
 
 1. В HACS → Интеграции → ⋯ → Пользовательские репозитории
 2. Добавить: `https://github.com/akmagcry-oss/breezart-ha`
-3. 📦 **Установка**: [HACS](https://hacs.xyz/) → Интеграции → Breezart → Установить (`v1.2.0`)
+3. 📦 **Установка**: [HACS](https://hacs.xyz/) → Интеграции → Breezart → Установить (`v1.2.1`)
 4. 🔄 **Перезапуск**: Home Assistant → Перезапустить
 5. ⚙️ **Настройка**: Настройки → Устройства → Интеграции → Добавить интеграцию → Breezart
 
@@ -147,7 +147,7 @@ custom_components/breezart/
 ├── number.py             # Управление (температура, скорость)
 ├── switch.py             # Выключатель питания + 7 переключателей уведомлений в настройках устройства
 ├── const.py              # Все константы протоколов, карта регистров JL204c7, пресеты и словари RU/EN
-├── manifest.json         # Метаданные HACS (v1.2.0)
+├── manifest.json         # Метаданные HACS (v1.2.1)
 ├── strings.json          # Базовые строки локализации
 └── translations/         # Переводы (ru.json, en.json)
 ```

@@ -222,13 +222,16 @@ TRANSLATION_KEY_POWER_SWITCH: Final[str] = "power"
 TRANSLATION_KEY_TARGET_TEMP: Final[str] = "target_temperature"
 TRANSLATION_KEY_FAN_SPEED: Final[str] = "fan_speed"
 
-# Notification settings & event keys (v1.2.0)
+# Notification settings & event keys (v1.2.0 / v1.2.1)
 DEFAULT_NOTIFY_SERVICE: Final[str] = "notify.notify"
 NOTIFY_DOMAIN: Final[str] = "notify"
 PERSISTENT_NOTIFICATION_DOMAIN: Final[str] = "persistent_notification"
 SERVICE_CREATE: Final[str] = "create"
 MOBILE_APP_SERVICE_PREFIX: Final[str] = "mobile_app_"
 EVENT_BREEZART_NOTIFICATION: Final[str] = "breezart_notification"
+NOTIFY_COOLDOWN_SECONDS: Final[float] = 30.0
+NOTIFY_POWER_COOLDOWN_SECONDS: Final[float] = 10.0
+NOTIFY_OFFLINE_FAILURE_THRESHOLD: Final[int] = 2
 
 KEY_NOTIFY_OVERHEAT: Final[str] = "notify_overheat"
 KEY_NOTIFY_FREEZE: Final[str] = "notify_freeze"

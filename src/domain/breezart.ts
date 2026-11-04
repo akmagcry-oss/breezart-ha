@@ -944,6 +944,56 @@ export const NOTIFICATION_SETTING_KEYS: readonly NotificationSettingKey[] = [
   'notify_other_errors',
 ] as const;
 
+export function resolveNotifyTargets(
+  notifyService: string,
+  availableServices: readonly string[]
+): string[] {
+  const availableSet = new Set(availableServices);
+  const mobileTargets = availableServices.filter((svc) => svc.startsWith('mobile_app_'));
+  const rawItems = (notifyService || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (
+    rawItems.length === 0 ||
+    (rawItems.length === 1 && (rawItems[0] === 'notify.notify' || rawItems[0] === 'notify'))
+  ) {
+    if (mobileTargets.length > 0) {
+      return [...mobileTargets];
+    }
+    return availableSet.has('notify') ? ['notify'] : [];
+  }
+
+  const targets: string[] = [];
+  for (const rawTarget of rawItems) {
+    const svcName = rawTarget.startsWith('notify.') ? rawTarget.slice('notify.'.length) : rawTarget;
+    if (availableSet.has(svcName) && !targets.includes(svcName)) {
+      targets.push(svcName);
+    }
+  }
+
+  if (targets.includes('notify') && targets.some((t) => t.startsWith('mobile_app_'))) {
+    return targets.filter((t) => t !== 'notify');
+  }
+
+  return targets;
+}
+
+export function shouldSendThrottledNotification(
+  throttleKey: string,
+  nowSeconds: number,
+  lastSentMap: Record<string, number>,
+  cooldownSeconds: number = 30
+): boolean {
+  const prev = lastSentMap[throttleKey];
+  if (prev !== undefined && nowSeconds - prev < cooldownSeconds) {
+    return false;
+  }
+  lastSentMap[throttleKey] = nowSeconds;
+  return true;
+}
+
 export function translateEntity(key: string, lang: Language): string {
   return I18N_CATALOG[lang].entities[key] ?? key;
 }
@@ -956,5 +1006,6 @@ export function translateState(
   const dict = I18N_CATALOG[lang][category] as Record<string, string>;
   return dict[key] ?? key;
 }
+
 
 

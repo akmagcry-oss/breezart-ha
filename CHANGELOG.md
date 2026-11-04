@@ -2,6 +2,15 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.2.1]
+
+### Fixed
+- **Duplicate Mobile Push Notifications & Event Debounce/Throttle (`coordinator.py`, `const.py`)**:
+  - Fixed duplicate push notifications on mobile devices where calling both `notify.notify` (which in Home Assistant already broadcasts to all `notify.mobile_app_*` services) and `notify.mobile_app_<phone>` caused 2 identical notifications per event. Added `_resolve_notify_targets()` so `notify.mobile_app_*` targets are called directly without also invoking the `notify.notify` broadcast group.
+  - Added consecutive failure debounce (`NOTIFY_OFFLINE_FAILURE_THRESHOLD = 2`) before transitioning `_was_online` to `False` and sending `notify_offline`, preventing false offline/online notification pairs on single transient TCP/Modbus timeouts.
+  - Added per-event cooldown/throttle (`NOTIFY_COOLDOWN_SECONDS = 30.0`, `NOTIFY_POWER_COOLDOWN_SECONDS = 10.0`) and `asyncio.Lock` poll serialization (`_update_lock`) across all 7 notification types (`overheat`, `freeze`, `filter`, `offline`, `online`, `power`, `other_errors`) so concurrent refreshes or sensor jitter cannot trigger duplicate notifications.
+  - Updated `_async_update_data` to refresh `get_sensors()` before `get_state()` on initial/reconnect polls so supply/outdoor/water temperatures and filter pollution are populated before evaluating `danger_freeze` and `change_filter`, and stabilized `HOLDING[3]` power state detection during damper transitions.
+
 ## [1.2.0]
 
 ### Added

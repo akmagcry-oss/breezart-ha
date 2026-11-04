@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
+from collections.abc import Iterable
 from datetime import timedelta
 from typing import Any
 
@@ -172,6 +174,7 @@ from .const import (
     NO_DATA_BYTE,
     NO_DATA_HEX,
     NOTIFICATION_SETTING_KEYS,
+    NOTIFY_COOLDOWN_SECONDS,
     NOTIFY_DOMAIN,
     NOTIFY_EVENT_FILTER,
     NOTIFY_EVENT_FREEZE,
@@ -181,6 +184,8 @@ from .const import (
     NOTIFY_EVENT_OVERHEAT,
     NOTIFY_EVENT_POWER_OFF,
     NOTIFY_EVENT_POWER_ON,
+    NOTIFY_OFFLINE_FAILURE_THRESHOLD,
+    NOTIFY_POWER_COOLDOWN_SECONDS,
     PERSISTENT_NOTIFICATION_DOMAIN,
     POWER_OFF,
     POWER_ON,
@@ -1014,9 +1019,11 @@ class BreezartModbusClient:
         hw_freeze_flag = bool(alarm_mask & (1 << MODBUS_ALARM_BIT_FREEZE))
         change_filter = bool(alarm_mask & (1 << MODBUS_ALARM_BIT_FILTER))
 
-        power = bool(power_reg > 0 or cur_mode_reg > 0 or bit_power)
-        if bit_trans:
-            unit_state = UNIT_STATE_STARTUP if bit_power else UNIT_STATE_SHUTDOWN
+        # HOLDING[3] (power_reg) is the authoritative target power switch state (0=Off, 1=Working, 2=Standby).
+        # During startup/shutdown transitions (bit_trans=True), cur_mode_reg and bit_power lag while dampers/blowdown run.
+        power = bool(power_reg > 0) if power_reg in (0, 1, 2) else bool(cur_mode_reg > 0 or bit_power)
+        if bit_trans or (not power and (cur_mode_reg > 0 or bit_power)):
+            unit_state = UNIT_STATE_STARTUP if power else UNIT_STATE_SHUTDOWN
             color_ind = COLOR_IND_TRANSITION
         else:
             unit_state = UNIT_STATE_ON if power else UNIT_STATE_OFF
@@ -1341,6 +1348,54 @@ async def async_detect_and_connect_client(
     raise ConnectionError(f"Unable to connect to Breezart at {host}:{port}")
 
 
+def _resolve_notify_targets(
+    notify_service: str,
+    available_services: Iterable[str],
+) -> list[str]:
+    """Resolve deduplicated notify.* service names without calling both notify.notify and mobile_app_*.
+
+    In Home Assistant, `notify.notify` is a broadcast service that already forwards messages
+    to all registered `notify.mobile_app_*` phone targets. Calling both `notify.notify` and
+    `notify.mobile_app_<phone>` causes two identical push notifications to arrive on the phone.
+    """
+    available_set = set(available_services)
+    mobile_targets = [
+        svc for svc in available_services if svc.startswith(MOBILE_APP_SERVICE_PREFIX)
+    ]
+
+    raw_items = [
+        item.strip()
+        for item in (notify_service or "").split(",")
+        if item.strip()
+    ]
+
+    # Default or empty configuration: prefer direct mobile_app_* targets; fallback to notify.notify only if none exist
+    if not raw_items or (
+        len(raw_items) == 1 and raw_items[0] in (DEFAULT_NOTIFY_SERVICE, NOTIFY_DOMAIN)
+    ):
+        if mobile_targets:
+            return mobile_targets
+        return [NOTIFY_DOMAIN] if NOTIFY_DOMAIN in available_set else []
+
+    targets: list[str] = []
+    for raw_target in raw_items:
+        svc_name = (
+            raw_target.split(".", 1)[1]
+            if raw_target.startswith(f"{NOTIFY_DOMAIN}.")
+            else raw_target
+        )
+        if svc_name in available_set and svc_name not in targets:
+            targets.append(svc_name)
+
+    # If both broadcast "notify" and specific "mobile_app_*" targets are present, drop "notify" to avoid duplicates
+    if NOTIFY_DOMAIN in targets and any(
+        t.startswith(MOBILE_APP_SERVICE_PREFIX) for t in targets
+    ):
+        targets.remove(NOTIFY_DOMAIN)
+
+    return targets
+
+
 class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that polls Breezart for state and sensor data and dispatches event notifications."""
 
@@ -1372,19 +1427,22 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if key in notify_settings:
                     self.notify_settings[key] = bool(notify_settings[key])
 
+        self._update_lock = asyncio.Lock()
         self._properties_loaded = False
         self._cached_sensors: dict[str, Any] = {}
         self._sensors_update_counter = 0
 
-        # Edge-detection state for notifications
+        # Edge-detection, debounce, and per-event cooldown state for notifications
         self._has_initial_snapshot = False
         self._was_online = True
+        self._consecutive_failures: int = 0
         self._prev_power: bool | None = None
         self._prev_overheat = False
         self._prev_freeze = False
         self._prev_filter = False
         self._prev_other_err = False
         self._prev_err_msg: str | None = None
+        self._last_notification_time: dict[str, float] = {}
 
     @property
     def model_name(self) -> str:
@@ -1411,6 +1469,21 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if key in NOTIFICATION_SETTING_KEYS:
             self.notify_settings[key] = bool(enabled)
 
+    def _should_send_throttled(self, throttle_key: str, cooldown_seconds: float) -> bool:
+        """Return True if throttle_key has not been sent within cooldown_seconds, and record timestamp."""
+        now = time.monotonic()
+        last_sent = self._last_notification_time.get(throttle_key)
+        if last_sent is not None and (now - last_sent) < cooldown_seconds:
+            _LOGGER.debug(
+                "Suppressing duplicate Breezart notification '%s' (%.1fs < %.1fs cooldown)",
+                throttle_key,
+                now - last_sent,
+                cooldown_seconds,
+            )
+            return False
+        self._last_notification_time[throttle_key] = now
+        return True
+
     async def _async_send_notification(
         self,
         event_key: str,
@@ -1418,6 +1491,19 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         extra_detail: str | None = None,
     ) -> None:
         """Send a localized notification to mobile devices, HA persistent notifications, and the event bus."""
+        cooldown = (
+            NOTIFY_POWER_COOLDOWN_SECONDS
+            if event_key in (NOTIFY_EVENT_POWER_ON, NOTIFY_EVENT_POWER_OFF)
+            else NOTIFY_COOLDOWN_SECONDS
+        )
+        throttle_key = (
+            f"{event_key}:{extra_detail}"
+            if event_key == NOTIFY_EVENT_OTHER_ERRORS and extra_detail
+            else event_key
+        )
+        if not self._should_send_throttled(throttle_key, cooldown):
+            return
+
         language = getattr(getattr(self.hass, "config", None), "language", "ru")
         title = f"{DEFAULT_NAME} {self.model_name} ({self.client.host})"
         base_msg = translate_value("notifications", event_key, language)
@@ -1454,31 +1540,11 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.debug("Failed to create persistent notification: %s", err)
 
-        # 3) Send push notification to phone / configured notify.* service(s)
+        # 3) Send push notification to phone / configured notify.* service(s) without duplicate broadcast
         try:
             all_services = self.hass.services.async_services()
             notify_services = all_services.get(NOTIFY_DOMAIN, {})
-            targets: list[str] = []
-
-            raw_targets = [
-                item.strip()
-                for item in self.notify_service.split(",")
-                if item.strip()
-            ]
-            for raw_target in raw_targets:
-                svc_name = (
-                    raw_target.split(".", 1)[1]
-                    if raw_target.startswith(f"{NOTIFY_DOMAIN}.")
-                    else raw_target
-                )
-                if svc_name in notify_services and svc_name not in targets:
-                    targets.append(svc_name)
-
-            # When using default notify.notify, also deliver directly to any registered mobile_app_* phone targets
-            if not raw_targets or self.notify_service == DEFAULT_NOTIFY_SERVICE:
-                for svc_name in notify_services:
-                    if svc_name.startswith(MOBILE_APP_SERVICE_PREFIX) and svc_name not in targets:
-                        targets.append(svc_name)
+            targets = _resolve_notify_targets(self.notify_service, notify_services.keys())
 
             for svc_name in targets:
                 await self.hass.services.async_call(
@@ -1492,7 +1558,7 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_evaluate_notifications(self, data: dict[str, Any]) -> None:
         """Check for state transitions and dispatch enabled notifications."""
-        # 1) Device came back online after an outage
+        # 1) Device came back online after a confirmed outage
         if not self._was_online:
             self._was_online = True
             if self.is_notification_enabled(KEY_NOTIFY_ONLINE):
@@ -1556,59 +1622,68 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._has_initial_snapshot = True
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch latest data from Breezart."""
-        try:
-            if not self.client.is_connected:
-                await self.client.connect()
+        """Fetch latest data from Breezart with serialized polling and offline debounce."""
+        async with self._update_lock:
+            try:
+                if not self.client.is_connected:
+                    await self.client.connect()
 
-            if not self._properties_loaded:
-                await self.client.get_properties()
-                self._properties_loaded = True
+                if not self._properties_loaded:
+                    await self.client.get_properties()
+                    self._properties_loaded = True
 
-            state = await self.client.get_state()
+                # Refresh physical sensors BEFORE get_state() when due (including initial/reconnect poll)
+                # so get_state() has up-to-date supply/outdoor/water temperatures and filter pollution.
+                self._sensors_update_counter += 1
+                cycles_per_sensor_update = max(1, SENSORS_UPDATE_INTERVAL // STATE_UPDATE_INTERVAL)
+                if (
+                    self._sensors_update_counter >= cycles_per_sensor_update
+                    or not self._cached_sensors
+                ):
+                    self._cached_sensors = await self.client.get_sensors()
+                    self._sensors_update_counter = 0
+                    _LOGGER.debug("Breezart sensors refreshed")
 
-            self._sensors_update_counter += 1
-            cycles_per_sensor_update = max(1, SENSORS_UPDATE_INTERVAL // STATE_UPDATE_INTERVAL)
-            if (
-                self._sensors_update_counter >= cycles_per_sensor_update
-                or not self._cached_sensors
-            ):
-                self._cached_sensors = await self.client.get_sensors()
-                self._sensors_update_counter = 0
-                _LOGGER.debug("Breezart sensors refreshed")
+                state = await self.client.get_state()
 
-            data = {**state, **self._cached_sensors}
-            if data.get(KEY_FILTER_DUST) is None and data.get(KEY_FILTER1_POLLUTION) is not None:
-                data[KEY_FILTER_DUST] = round(float(data[KEY_FILTER1_POLLUTION]))
+                data = {**state, **self._cached_sensors}
+                if data.get(KEY_FILTER_DUST) is None and data.get(KEY_FILTER1_POLLUTION) is not None:
+                    data[KEY_FILTER_DUST] = round(float(data[KEY_FILTER1_POLLUTION]))
 
-            data[KEY_TEMP_MIN] = self.client.temp_min
-            data[KEY_TEMP_MAX] = self.client.temp_max
-            data[KEY_SPEED_MIN] = self.client.speed_min
-            data[KEY_SPEED_MAX] = self.client.speed_max
-            data[KEY_HAS_COOLER] = self.client.has_cooler
-            data[KEY_HAS_HUMIDIFIER] = self.client.has_humidifier
-            data[KEY_FIRMWARE_VER] = self.client.firmware_ver
-            data[KEY_PROTOCOL_VER] = self.client.protocol_ver
+                data[KEY_TEMP_MIN] = self.client.temp_min
+                data[KEY_TEMP_MAX] = self.client.temp_max
+                data[KEY_SPEED_MIN] = self.client.speed_min
+                data[KEY_SPEED_MAX] = self.client.speed_max
+                data[KEY_HAS_COOLER] = self.client.has_cooler
+                data[KEY_HAS_HUMIDIFIER] = self.client.has_humidifier
+                data[KEY_FIRMWARE_VER] = self.client.firmware_ver
+                data[KEY_PROTOCOL_VER] = self.client.protocol_ver
 
-            await self._async_evaluate_notifications(data)
+                self._consecutive_failures = 0
+                await self._async_evaluate_notifications(data)
 
-            _LOGGER.debug(
-                "Breezart state update (%s): power=%s temp=%s speed=%s",
-                self.client.protocol_type,
-                data.get(KEY_POWER),
-                data.get(KEY_TEMPERATURE_TARGET),
-                data.get(KEY_SPEED_TARGET),
-            )
-            return data
+                _LOGGER.debug(
+                    "Breezart state update (%s): power=%s temp=%s speed=%s",
+                    self.client.protocol_type,
+                    data.get(KEY_POWER),
+                    data.get(KEY_TEMPERATURE_TARGET),
+                    data.get(KEY_SPEED_TARGET),
+                )
+                return data
 
-        except (ConnectionError, OSError, TimeoutError, asyncio.IncompleteReadError) as err:
-            self._properties_loaded = False
-            self._cached_sensors = {}
-            await self.client.disconnect()
-            if self._was_online:
-                self._was_online = False
-                if self.is_notification_enabled(KEY_NOTIFY_OFFLINE):
-                    await self._async_send_notification(NOTIFY_EVENT_OFFLINE)
-            raise UpdateFailed(f"Connection error: {err}") from err
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with Breezart: {err}") from err
+            except (ConnectionError, OSError, TimeoutError, asyncio.IncompleteReadError) as err:
+                self._properties_loaded = False
+                self._cached_sensors = {}
+                await self.client.disconnect()
+                self._consecutive_failures += 1
+                if (
+                    self._was_online
+                    and self._consecutive_failures >= NOTIFY_OFFLINE_FAILURE_THRESHOLD
+                ):
+                    self._was_online = False
+                    if self.is_notification_enabled(KEY_NOTIFY_OFFLINE):
+                        await self._async_send_notification(NOTIFY_EVENT_OFFLINE)
+                raise UpdateFailed(f"Connection error: {err}") from err
+            except Exception as err:
+                raise UpdateFailed(f"Error communicating with Breezart: {err}") from err
+
