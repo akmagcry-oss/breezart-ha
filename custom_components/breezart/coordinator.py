@@ -17,6 +17,7 @@ from .const import (
     BIT_COLOR_IND_START,
     BIT_COLOR_MSG_END,
     BIT_COLOR_MSG_START,
+    BIT_DANGER_FREEZE,
     BIT_DANGER_OVERHEAT,
     BIT_FATAL_ERR,
     BIT_FORMAT_16,
@@ -57,12 +58,15 @@ from .const import (
     DELIMITER,
     DOMAIN,
     ERROR_PREFIX,
+    FREEZE_OUTDOOR_TEMP_THRESHOLD,
+    FREEZE_SUPPLY_TEMP_THRESHOLD,
     HEX_FORMAT_LOWER,
     HEX_ZERO,
     KEY_CHANGE_FILTER,
     KEY_CO2,
     KEY_COLOR_IND,
     KEY_COLOR_MSG,
+    KEY_DANGER_FREEZE,
     KEY_DANGER_OVERHEAT,
     KEY_FILTER1_POLLUTION,
     KEY_FILTER2_POLLUTION,
@@ -273,6 +277,35 @@ def _parse_io_data(
     return round(raw / divisor, 1)
 
 
+def _detect_freeze_hazard(
+    *,
+    hw_freeze_flag: bool,
+    power: bool,
+    mode: int,
+    control_temp: float | None,
+    supply_temp: float | None,
+    outdoor_temp: float | None,
+    water_temp: float | None,
+) -> bool:
+    """Return True if hardware freeze alarm is set or temperatures indicate freeze hazard."""
+    if hw_freeze_flag:
+        return True
+    if supply_temp is not None and supply_temp < FREEZE_SUPPLY_TEMP_THRESHOLD:
+        return True
+    if water_temp is not None and water_temp < FREEZE_SUPPLY_TEMP_THRESHOLD:
+        return True
+    if power and control_temp is not None and control_temp < FREEZE_SUPPLY_TEMP_THRESHOLD:
+        return True
+    if (
+        power
+        and outdoor_temp is not None
+        and outdoor_temp < FREEZE_OUTDOOR_TEMP_THRESHOLD
+        and mode in (MODE_VENT, MODE_COOL, MODE_AUTO_COOL)
+    ):
+        return True
+    return False
+
+
 class BreezartTCPClient:
     """TCP client for Breezart ventilation system (native ASCII protocol, port 1560)."""
 
@@ -319,6 +352,9 @@ class BreezartTCPClient:
         self.has_humidifier: bool = bool(preset["has_humidifier"])
         self.firmware_ver: int | str | None = None
         self.protocol_ver: str | None = None
+        self._last_temp_supply: float | None = None
+        self._last_temp_outdoor: float | None = None
+        self._last_temp_water: float | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -461,6 +497,7 @@ class BreezartTCPClient:
         is_warn_err = bool(_parse_bits(parts[VST07_IDX_STATE], BIT_WARN_ERR))
         is_fatal_err = bool(_parse_bits(parts[VST07_IDX_STATE], BIT_FATAL_ERR))
         danger_overheat = bool(_parse_bits(parts[VST07_IDX_STATE], BIT_DANGER_OVERHEAT))
+        bit_danger_freeze = bool(_parse_bits(parts[VST07_IDX_STATE], BIT_DANGER_FREEZE))
         change_filter = bool(_parse_bits(parts[VST07_IDX_STATE], BIT_CHANGE_FILTER))
         mode_set = _parse_bits(parts[VST07_IDX_STATE], BIT_MODE_SET_START, BIT_MODE_SET_END)
 
@@ -493,9 +530,19 @@ class BreezartTCPClient:
         filter_dust = None if filter_dust_raw == NO_DATA_BYTE else filter_dust_raw
 
         msg = parts[VST07_IDX_MSG] if len(parts) > VST07_IDX_MSG else None
+        power = bool(pwr_btn_state)
+        danger_freeze = _detect_freeze_hazard(
+            hw_freeze_flag=bit_danger_freeze,
+            power=power,
+            mode=mode,
+            control_temp=float(tempr),
+            supply_temp=self._last_temp_supply,
+            outdoor_temp=self._last_temp_outdoor,
+            water_temp=self._last_temp_water,
+        )
 
         return {
-            KEY_POWER: bool(pwr_btn_state),
+            KEY_POWER: power,
             KEY_UNIT_STATE: unit_state,
             KEY_MODE: mode,
             KEY_MODE_SET: mode_set,
@@ -509,6 +556,7 @@ class BreezartTCPClient:
             KEY_IS_WARN_ERR: is_warn_err,
             KEY_IS_FATAL_ERR: is_fatal_err,
             KEY_DANGER_OVERHEAT: danger_overheat,
+            KEY_DANGER_FREEZE: danger_freeze,
             KEY_CHANGE_FILTER: change_filter,
             KEY_COLOR_MSG: color_msg,
             KEY_COLOR_IND: color_ind,
@@ -540,14 +588,21 @@ class BreezartTCPClient:
                 return None
             return _parse_temp_sensor(parts[idx]) if is_temp else _parse_sensor(parts[idx])
 
+        temp_supply = _get(VSENS_IDX_TEMP_SUPPLY, is_temp=True)
+        temp_outdoor = _get(VSENS_IDX_TEMP_OUTDOOR, is_temp=True)
+        temp_water = _get(VSENS_IDX_TEMP_WATER)
+        self._last_temp_supply = temp_supply
+        self._last_temp_outdoor = temp_outdoor
+        self._last_temp_water = temp_water
+
         return {
-            KEY_TEMP_SUPPLY: _get(VSENS_IDX_TEMP_SUPPLY, is_temp=True),
+            KEY_TEMP_SUPPLY: temp_supply,
             KEY_HUMIDITY_SUPPLY: _get(VSENS_IDX_HUMID_SUPPLY),
             KEY_TEMP_ROOM: _get(VSENS_IDX_TEMP_ROOM),
             KEY_HUMIDITY_ROOM: _get(VSENS_IDX_HUMID_ROOM),
-            KEY_TEMP_OUTDOOR: _get(VSENS_IDX_TEMP_OUTDOOR, is_temp=True),
+            KEY_TEMP_OUTDOOR: temp_outdoor,
             KEY_HUMIDITY_OUTDOOR: _get(VSENS_IDX_HUMID_OUTDOOR),
-            KEY_TEMP_WATER: _get(VSENS_IDX_TEMP_WATER),
+            KEY_TEMP_WATER: temp_water,
             KEY_POWER_CONSUMPTION: _get(VSENS_IDX_POWER_CONSUMPTION),
             KEY_CO2: _get(VSENS_IDX_CO2),
             KEY_VOC: _get(VSENS_IDX_VOC),
@@ -615,6 +670,9 @@ class BreezartModbusClient:
         self._lock = asyncio.Lock()
         self._tx_id: int = 0
         self._last_filter1_dust: float | None = None
+        self._last_temp_supply: float | None = None
+        self._last_temp_outdoor: float | None = None
+        self._last_temp_water: float | None = None
 
         preset = get_model_preset(model)
         self._user_temp_min: int | None = int(temp_min) if temp_min is not None else None
@@ -823,6 +881,10 @@ class BreezartModbusClient:
                 MODBUS_IR_SENSORS_BLOCK_START,
                 MODBUS_IR_SENSORS_BLOCK_COUNT,
             )
+            if len(sensors_ir) >= 14:
+                self._last_temp_supply = _parse_io_data(sensors_ir[0], sensors_ir[1], is_signed=True)
+                self._last_temp_outdoor = _parse_io_data(sensors_ir[8], sensors_ir[9], is_signed=True)
+                self._last_temp_water = _parse_io_data(sensors_ir[12], sensors_ir[13], is_signed=True)
             if len(sensors_ir) >= 22:
                 self._apply_hw_temp_bounds(sensors_ir[20], sensors_ir[21])
         except Exception as err:
@@ -923,9 +985,9 @@ class BreezartModbusClient:
 
         alarm_mask = errors_low | warnings_low
         danger_overheat = bit_overheat_blow or bool(
-            alarm_mask
-            & ((1 << MODBUS_ALARM_BIT_OVERHEAT) | (1 << MODBUS_ALARM_BIT_FREEZE))
+            alarm_mask & (1 << MODBUS_ALARM_BIT_OVERHEAT)
         )
+        hw_freeze_flag = bool(alarm_mask & (1 << MODBUS_ALARM_BIT_FREEZE))
         change_filter = bool(alarm_mask & (1 << MODBUS_ALARM_BIT_FILTER))
 
         power = bool(power_reg > 0 or cur_mode_reg > 0 or bit_power)
@@ -946,6 +1008,16 @@ class BreezartModbusClient:
             mode = MODE_COOL
         else:
             mode = MODE_VENT
+
+        danger_freeze = _detect_freeze_hazard(
+            hw_freeze_flag=hw_freeze_flag,
+            power=power,
+            mode=mode,
+            control_temp=cur_t,
+            supply_temp=self._last_temp_supply,
+            outdoor_temp=self._last_temp_outdoor,
+            water_temp=self._last_temp_water,
+        )
 
         if cur_f is not None:
             speed_fact = round(cur_f)
@@ -990,6 +1062,7 @@ class BreezartModbusClient:
             KEY_IS_WARN_ERR: is_warn_err,
             KEY_IS_FATAL_ERR: is_fatal_err,
             KEY_DANGER_OVERHEAT: danger_overheat,
+            KEY_DANGER_FREEZE: danger_freeze,
             KEY_CHANGE_FILTER: change_filter,
             KEY_COLOR_MSG: color_msg,
             KEY_COLOR_IND: color_ind,
@@ -1015,6 +1088,10 @@ class BreezartModbusClient:
         temp_outdoor = _parse_io_data(sensors_ir[8], sensors_ir[9], is_signed=True)
         humidity_outdoor = _parse_io_data(sensors_ir[10], sensors_ir[11], is_signed=False)
         temp_water = _parse_io_data(sensors_ir[12], sensors_ir[13], is_signed=True)
+
+        self._last_temp_supply = temp_supply
+        self._last_temp_outdoor = temp_outdoor
+        self._last_temp_water = temp_water
 
         # Update dynamic min/max temperature limits from INPUT[70..71] if not overridden by user
         if len(sensors_ir) >= 22:

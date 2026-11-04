@@ -92,6 +92,9 @@
       "danger_overheat": {
         "name": "Overheat hazard"
       },
+      "danger_freeze": {
+        "name": "Freeze hazard"
+      },
       "change_filter": {
         "name": "Filter replacement required"
       },

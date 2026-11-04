@@ -2,7 +2,16 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
-## [1.1.1] - 2026-11-04
+## [1.1.2]
+
+### Added
+- **Freeze Hazard Diagnostic Indicator (`binary_sensor.breezart_danger_freeze`)**:
+  - Added `KEY_DANGER_FREEZE` (`danger_freeze`) binary sensor (`BinarySensorDeviceClass.COLD`, `EntityCategory.DIAGNOSTIC`) in `custom_components/breezart/binary_sensor.py` and `custom_components/breezart/const.py`.
+  - Added `_detect_freeze_hazard` in `custom_components/breezart/coordinator.py` for both **Modbus TCP (`JL204c7`)** and **Native TCP (`VSt07`)**, triggering on hardware freeze alarms (`MODBUS_ALARM_BIT_FREEZE = 4` in `INPUT[19]` / `INPUT[21]` or `BIT_DANGER_FREEZE = 4` in `VSt07`) as well as low temperature conditions (supply/control/water temperature below `+5.0 °C`, or sub-zero outdoor temperature `< 0.0 °C` when the unit runs without heating).
+  - Separated `MODBUS_ALARM_BIT_FREEZE` from `danger_overheat` so overheat and freeze hazards are reported independently.
+  - Added Russian (`"Угроза обморожения"`) and English (`"Freeze hazard"`) translations in `const.py`, `strings.json`, `translations/ru.json`, and `translations/en.json`.
+
+## [1.1.1]
 
 ### Added
 - **Configurable Fan Speeds (`1–10`) & Heating Temperature Bounds (`5–35 °C`)**:
@@ -15,7 +24,7 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
   - Updated default fan speeds to `10` (`1..10`) and heating temperature limits to `5–35 °C` (`DEFAULT_SPEED_MAX = 10`, `DEFAULT_TEMP_MIN = 5`, `DEFAULT_TEMP_MAX = 35`) across `MODEL_PRESETS` in `custom_components/breezart/const.py` so `HOLDING[0]` (`10%..100%`) maps `1:1` with the 10-speed **JLV135** control panel.
   - Converted `min_temp`, `max_temp`, `fan_modes` in `custom_components/breezart/climate.py` and `native_min_value`, `native_max_value` in `custom_components/breezart/number.py` to dynamic `@property` methods reading live bounds from the coordinator client.
 
-## [1.1.0] - 2026-11-04
+## [1.1.0]
 
 ### Added
 - **Modbus TCP Protocol Support (`port 502`)**:
@@ -34,7 +43,7 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 - **Dual-Protocol Diagnostic Utility (`test_connection.py`)**:
   - Updated `test_connection.py` to test both Modbus TCP (`port 502`) and Native TCP (`port 1560`) with automatic fallback and detailed register decoding.
 
-## [1.0.0] - 2026-11-02
+## [1.0.0]
 
 ### Added
 - **Initial Release (`v1.0.0`)**: Full-featured Home Assistant integration for Breezart ventilation systems over the native TCP protocol (`port 1560`).

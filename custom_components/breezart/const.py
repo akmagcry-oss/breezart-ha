@@ -133,6 +133,7 @@ BIT_PWR_BTN: Final[int] = 0
 BIT_WARN_ERR: Final[int] = 1
 BIT_FATAL_ERR: Final[int] = 2
 BIT_DANGER_OVERHEAT: Final[int] = 3
+BIT_DANGER_FREEZE: Final[int] = 4
 BIT_CHANGE_FILTER: Final[int] = 5
 BIT_MODE_SET_START: Final[int] = 6
 BIT_MODE_SET_END: Final[int] = 8
@@ -183,6 +184,7 @@ KEY_FILTER_DUST: Final[str] = "filter_dust"
 KEY_IS_WARN_ERR: Final[str] = "is_warn_err"
 KEY_IS_FATAL_ERR: Final[str] = "is_fatal_err"
 KEY_DANGER_OVERHEAT: Final[str] = "danger_overheat"
+KEY_DANGER_FREEZE: Final[str] = "danger_freeze"
 KEY_CHANGE_FILTER: Final[str] = "change_filter"
 KEY_COLOR_MSG: Final[str] = "color_msg"
 KEY_COLOR_IND: Final[str] = "color_ind"
@@ -231,6 +233,8 @@ MIN_ALLOWED_TEMP_BOUND: Final[int] = 5
 MAX_ALLOWED_TEMP_BOUND: Final[int] = 45
 MIN_ALLOWED_SPEED_MAX: Final[int] = 1
 MAX_ALLOWED_SPEED_MAX: Final[int] = 10
+FREEZE_SUPPLY_TEMP_THRESHOLD: Final[float] = 5.0
+FREEZE_OUTDOOR_TEMP_THRESHOLD: Final[float] = 0.0
 
 # UnitState protocol codes & canonical state keys
 UNIT_STATE_OFF: Final[int] = 0
@@ -670,6 +674,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_IS_WARN_ERR: "Предупреждение",
             KEY_IS_FATAL_ERR: "Критическая ошибка",
             KEY_DANGER_OVERHEAT: "Угроза перегрева",
+            KEY_DANGER_FREEZE: "Угроза обморожения",
             KEY_CHANGE_FILTER: "Требуется замена фильтра",
             KEY_POWER: "Установка включена",
         },
@@ -763,6 +768,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_IS_WARN_ERR: "Warning",
             KEY_IS_FATAL_ERR: "Fatal error",
             KEY_DANGER_OVERHEAT: "Overheat hazard",
+            KEY_DANGER_FREEZE: "Freeze hazard",
             KEY_CHANGE_FILTER: "Filter replacement required",
             KEY_POWER: "Unit running",
         },

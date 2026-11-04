@@ -92,6 +92,9 @@
       "danger_overheat": {
         "name": "Угроза перегрева"
       },
+      "danger_freeze": {
+        "name": "Угроза обморожения"
+      },
       "change_filter": {
         "name": "Требуется замена фильтра"
       },

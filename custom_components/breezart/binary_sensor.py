@@ -16,6 +16,7 @@ from .const import (
     DATA_COORDINATOR,
     DOMAIN,
     KEY_CHANGE_FILTER,
+    KEY_DANGER_FREEZE,
     KEY_DANGER_OVERHEAT,
     KEY_IS_FATAL_ERR,
     KEY_IS_WARN_ERR,
@@ -85,6 +86,12 @@ async def async_setup_entry(
                 coordinator,
                 KEY_DANGER_OVERHEAT,
                 BinarySensorDeviceClass.HEAT,
+                EntityCategory.DIAGNOSTIC,
+            ),
+            BreezartBinarySensor(
+                coordinator,
+                KEY_DANGER_FREEZE,
+                BinarySensorDeviceClass.COLD,
                 EntityCategory.DIAGNOSTIC,
             ),
             BreezartBinarySensor(

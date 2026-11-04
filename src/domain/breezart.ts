@@ -124,6 +124,12 @@ export const BREEZART_CONSTANTS = {
   FILTER_POLLUTION_EXCELLENT_MAX: 30,
   FILTER_POLLUTION_GOOD_MAX: 60,
   FILTER_POLLUTION_REPLACE_MAX: 85,
+  FREEZE_SUPPLY_TEMP_THRESHOLD: 5.0,
+  FREEZE_OUTDOOR_TEMP_THRESHOLD: 0.0,
+  BIT_DANGER_OVERHEAT: 3,
+  BIT_DANGER_FREEZE: 4,
+  MODBUS_ALARM_BIT_FREEZE: 4,
+  MODBUS_ALARM_BIT_OVERHEAT: 5,
 } as const;
 
 export const EXTRACTED_CONSTANTS_CATALOG: readonly ProtocolConstantEntry[] = [
@@ -600,6 +606,52 @@ export function resolveHvacAction(
   return 'idle';
 }
 
+export function detectFreezeHazard(params: {
+  hwFreezeFlag: boolean;
+  power: boolean;
+  modeCode: number;
+  controlTemp?: number | null;
+  supplyTemp?: number | null;
+  outdoorTemp?: number | null;
+  waterTemp?: number | null;
+}): boolean {
+  if (params.hwFreezeFlag) return true;
+  if (
+    params.supplyTemp !== null &&
+    params.supplyTemp !== undefined &&
+    params.supplyTemp < BREEZART_CONSTANTS.FREEZE_SUPPLY_TEMP_THRESHOLD
+  ) {
+    return true;
+  }
+  if (
+    params.waterTemp !== null &&
+    params.waterTemp !== undefined &&
+    params.waterTemp < BREEZART_CONSTANTS.FREEZE_SUPPLY_TEMP_THRESHOLD
+  ) {
+    return true;
+  }
+  if (
+    params.power &&
+    params.controlTemp !== null &&
+    params.controlTemp !== undefined &&
+    params.controlTemp < BREEZART_CONSTANTS.FREEZE_SUPPLY_TEMP_THRESHOLD
+  ) {
+    return true;
+  }
+  if (
+    params.power &&
+    params.outdoorTemp !== null &&
+    params.outdoorTemp !== undefined &&
+    params.outdoorTemp < BREEZART_CONSTANTS.FREEZE_OUTDOOR_TEMP_THRESHOLD &&
+    (params.modeCode === BREEZART_CONSTANTS.MODE_VENT ||
+      params.modeCode === BREEZART_CONSTANTS.MODE_COOL ||
+      params.modeCode === BREEZART_CONSTANTS.MODE_AUTO_COOL)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export interface TranslationCatalog {
   entities: Record<string, string>;
   unit_state: Record<string, string>;
@@ -669,6 +721,7 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       is_warn_err: 'Предупреждение',
       is_fatal_err: 'Критическая ошибка',
       danger_overheat: 'Угроза перегрева',
+      danger_freeze: 'Угроза обморожения',
       change_filter: 'Требуется замена фильтра',
       unit_running: 'Установка включена',
     },
@@ -781,6 +834,7 @@ export const I18N_CATALOG: Record<Language, TranslationCatalog> = {
       is_warn_err: 'Warning',
       is_fatal_err: 'Fatal error',
       danger_overheat: 'Overheat hazard',
+      danger_freeze: 'Freeze hazard',
       change_filter: 'Filter replacement required',
       unit_running: 'Unit running',
     },

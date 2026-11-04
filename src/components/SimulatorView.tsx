@@ -11,6 +11,7 @@ import {
   buildModbusWriteSingleFrameHex,
   buildProtocolRequest,
   classifyFilterPollution,
+  detectFreezeHazard,
   getModelPreset,
   mapCmdModeToModbusHc,
   resolveHvacAction,
@@ -63,6 +64,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
   const [warnErr, setWarnErr] = useState<boolean>(false);
   const [fatalErr, setFatalErr] = useState<boolean>(false);
   const [overheat, setOverheat] = useState<boolean>(false);
+  const [freezeAlarm, setFreezeAlarm] = useState<boolean>(false);
   const [sensorFilter, setSensorFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [sensorSearch, setSensorSearch] = useState<string>('');
   const [lastTxCommand, setLastTxCommand] = useState<string>(
@@ -87,6 +89,15 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
     : BREEZART_CONSTANTS.UNIT_STATE_OFF;
   const hvacMode = resolveHvacMode(power, modeCode);
   const hvacAction = resolveHvacAction(power, unitStateCode, modeCode);
+  const isFreezeHazard = detectFreezeHazard({
+    hwFreezeFlag: freezeAlarm,
+    power,
+    modeCode,
+    controlTemp: supplyTemp,
+    supplyTemp,
+    outdoorTemp,
+    waterTemp: preset.hasWaterHeater ? waterTemp : null,
+  });
 
   const parsedPass = Number.parseInt(passwordInput, 10) || 21579;
   const parsedSlaveId = Number.parseInt(slaveIdInput, 10) || 1;
@@ -932,7 +943,7 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 mt-4">
           {[
             {
               key: 'unit_running',
@@ -960,6 +971,13 @@ export const SimulatorView: React.FC<SimulatorViewProps> = ({
               haKey: 'danger_overheat',
               active: overheat,
               toggle: () => setOverheat(!overheat),
+              isProblem: true,
+            },
+            {
+              key: 'danger_freeze',
+              haKey: 'danger_freeze',
+              active: isFreezeHazard,
+              toggle: () => setFreezeAlarm(!freezeAlarm),
               isProblem: true,
             },
             {
