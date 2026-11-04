@@ -16,6 +16,7 @@ from custom_components.breezart.const import (
     CONF_SPEED_MAX,
     CONF_TEMP_MAX,
     CONF_TEMP_MIN,
+    DATA_COORDINATOR,
     DOMAIN,
     KEY_NOTIFY_POWER,
     PROTOCOL_AUTO,
@@ -136,3 +137,35 @@ async def test_options_protocol_change_reports_errors(
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": expected}
     assert CONF_PROTOCOL not in setup_integration.options
+
+
+async def test_options_probe_releases_running_connection(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """The probe runs with the integration's socket closed and polling paused.
+
+    Controllers that accept a single TCP client would otherwise refuse the probe.
+    """
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    assert fake_client.is_connected
+    seen: dict[str, bool] = {}
+
+    async def probe(**_):
+        seen["connected"] = fake_client.is_connected
+        seen["polling_paused"] = coordinator._update_lock.locked()
+        raise ConnectionError("refused")
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    with patch(DETECT, probe):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], _options_input(**{CONF_PROTOCOL: PROTOCOL_MODBUS_TCP})
+        )
+
+    assert seen == {"connected": False, "polling_paused": True}
+    assert result["errors"] == {"base": "cannot_connect"}
+
+    # After a failed probe the integration reconnects on its next poll.
+    await coordinator.async_refresh()
+    assert fake_client.is_connected
+    assert coordinator.last_update_success

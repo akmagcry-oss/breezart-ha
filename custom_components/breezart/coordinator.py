@@ -5,7 +5,8 @@ import asyncio
 import logging
 import struct
 import time
-from collections.abc import Awaitable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Iterable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
@@ -1552,6 +1553,21 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=self.model_name,
             sw_version=str(self.client.firmware_ver or ""),
         )
+
+    @asynccontextmanager
+    async def async_release_connection(self) -> AsyncIterator[None]:
+        """Close the device connection and keep polling paused while the block runs.
+
+        Some controllers accept only one TCP client, so a second connection (e.g. the
+        options flow testing a new protocol) would be refused while this coordinator
+        holds its socket. Polls wait on the update lock; the next poll after the block
+        reconnects and re-reads device properties.
+        """
+        async with self._update_lock:
+            await self.client.disconnect()
+            self._properties_loaded = False
+            self._cached_sensors = {}
+            yield
 
     async def async_command(self, command: Awaitable[None]) -> None:
         """Run a device command, surface failures to the user, then refresh state."""
