@@ -5,28 +5,18 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 ## [1.2.2]
 
 ### Fixed
-- **Options Dialog Crash on Home Assistant 2025.12+ (`config_flow.py`)**:
-  - Opening the integration options raised `AttributeError` because the options flow assigned the now read-only `config_entry` property. Settings can be changed again.
-- **Protocol Changes in Options (`config_flow.py`, `__init__.py`)**:
-  - Changing the protocol or Modbus slave ID now probes the controller and stores the protocol and port that answered. Previously switching from Native TCP to Modbus kept port 1560. Failures are shown in the form (`cannot_connect`, `invalid_auth`, `unknown`).
-- **Connection Desync After Timeouts (`coordinator.py`)**:
-  - Both clients now drop the connection on timeouts and transport errors, so a late reply is never taken as the answer to the next request. Modbus replies are matched by transaction ID; unparseable replies trigger a reconnect on the next poll.
-- **Truncated Native TCP Replies (`coordinator.py`)**:
-  - Replies split across several TCP segments are read whole.
-- **Room and Water Temperatures on Native TCP (`coordinator.py`)**:
-  - `temp_room` and `temp_water` are decoded as signed ×10 values like supply and outdoor temperatures (22.5 °C was shown as 225).
-- **Optional Modbus Registers (`coordinator.py`)**:
-  - Fan power (10001), filter pollution (12005/12205) and system info (65000) blocks that a controller does not provide stop being polled (immediately on an "illegal address" reply, after 3 consecutive failures otherwise) instead of costing a timeout and reconnect on every poll.
-- **Modbus Current Temperature (`coordinator.py`)**:
-  - When the regulation sensor is unavailable, the current temperature is now empty instead of showing the target temperature.
-- **Notification Toggles Swallowing Reloads (`__init__.py`, `switch.py`)**:
-  - Replaced the `DATA_SKIP_RELOAD` flag, which could get stuck and silently skip the next options save. Notification toggles now apply live; any other settings change reloads the integration.
-- **Command Errors (`climate.py`, `number.py`, `switch.py`, `coordinator.py`)**:
-  - Failed commands from climate, number and switch entities show a translated error (`command_failed`, en/ru) instead of an unknown error or only a log line.
-
-### Added
-- **Test Suite (`tests/`, `requirements_test.txt`, `pyproject.toml`)**:
-  - pytest tests based on `pytest-homeassistant-custom-component` for the protocol clients (fake TCP servers), setup and reload, config and options flows, and entity commands.
+- **TCP Stream Desynchronization & Modbus Transaction Verification (`coordinator.py`)**:
+  - Added `_drop_connection()` in both `BreezartModbusClient` and `BreezartTCPClient` so timeouts and transport errors immediately close the socket, preventing late responses from being read as the answer to the next request.
+  - Unified Modbus TCP reads (`FC 0x03`, `0x04`) and writes (`FC 0x06`) through `_transact(frame, tx_id)` with strict MBAP transaction ID (`tx_id`) validation while keeping the connection intact on valid Modbus exception frames.
+  - Added `_read_response()` in `BreezartTCPClient` to accumulate multi-segment TCP replies until the device goes idle (`READ_DELAY_SECONDS`), preventing truncated responses on fragmented packets.
+  - Added automatic `client.disconnect()` on unparseable/corrupted poll responses in `BreezartDataCoordinator._async_update_data` so the next poll cleanly reconnects.
+- **Sensor Decoding & Climate State Accuracy (`coordinator.py`, `climate.py`)**:
+  - Fixed native `VSens` room (`VSENS_IDX_TEMP_ROOM`) and water (`VSENS_IDX_TEMP_WATER`) temperature decoding in `BreezartTCPClient.get_sensors()` to parse signed `× 10` values (`is_temp=True`) like supply and outdoor temperatures.
+  - Stopped falling back to `temp_target` in `BreezartModbusClient.get_state()` when the current temperature sensor (`cur_t`) is unavailable, returning `None` instead.
+  - Raised `HomeAssistantError` in `climate.py` when setting temperature, HVAC mode, fan speed, or power fails so Home Assistant surfaces the error in the UI and immediately rolls back optimistic state.
+- **Live Options Reload & Protocol Port Resolution (`__init__.py`, `const.py`, `switch.py`)**:
+  - Replaced the single-shot `DATA_SKIP_RELOAD` flag with a configuration snapshot (`DATA_RELOAD_SNAPSHOT` via `_reload_snapshot`) so toggling notification settings from either device switches or `OptionsFlow` applies live without reloading the integration.
+  - Added `_resolve_port(protocol, port)` in `__init__.py` to automatically switch between default ports `502` (Modbus TCP) and `1560` (Native TCP) when the protocol is changed in `OptionsFlow`.
 
 ## [1.2.1]
 
