@@ -21,7 +21,7 @@ DATA_CLIENT: Final[str] = "client"
 DATA_COORDINATOR: Final[str] = "coordinator"
 DATA_MODEL: Final[str] = "model"
 DATA_PROTOCOL: Final[str] = "protocol"
-DATA_SKIP_RELOAD: Final[str] = "skip_reload"
+DATA_RELOAD_SNAPSHOT: Final[str] = "reload_snapshot"
 
 # Supported transport protocols
 PROTOCOL_AUTO: Final[str] = "auto"

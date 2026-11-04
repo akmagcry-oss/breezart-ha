@@ -431,6 +431,38 @@ class BreezartTCPClient:
             self._writer = None
             self._reader = None
 
+    def _drop_connection(self) -> None:
+        """Close the socket without waiting so a desynced stream is never reused."""
+        if self._writer:
+            self._writer.close()
+        self._writer = None
+        self._reader = None
+
+    async def _read_response(self) -> bytes:
+        """Read one reply, tolerating replies split across several TCP segments.
+
+        The native protocol has no terminator, so after the first chunk keep reading
+        until the device has been silent for READ_DELAY_SECONDS.
+        """
+        assert self._reader is not None
+        raw = await asyncio.wait_for(
+            self._reader.read(READ_BUFFER_SIZE), timeout=self.timeout
+        )
+        if not raw:
+            raise ConnectionError("Connection closed by Breezart")
+        while len(raw) < READ_BUFFER_SIZE:
+            try:
+                chunk = await asyncio.wait_for(
+                    self._reader.read(READ_BUFFER_SIZE - len(raw)),
+                    timeout=READ_DELAY_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                break
+            if not chunk:
+                break
+            raw += chunk
+        return raw
+
     async def _send(self, request: str) -> list[str]:
         """Send a request and return split response."""
         async with self._lock:
@@ -438,26 +470,23 @@ class BreezartTCPClient:
                 raise ConnectionError("Not connected to Breezart")
 
             _LOGGER.debug("Breezart Native TX: %s", request)
-            self._writer.write(request.encode())
-            await self._writer.drain()
-
-            await asyncio.sleep(READ_DELAY_SECONDS)
-
-            response = ""
             try:
-                raw = await asyncio.wait_for(
-                    self._reader.read(READ_BUFFER_SIZE),
-                    timeout=self.timeout,
-                )
-                if not raw:
-                    raise TimeoutError(f"No response for request: {request}")
-                response = raw.decode(errors="ignore").strip()
+                self._writer.write(request.encode())
+                await self._writer.drain()
+                raw = await self._read_response()
             except asyncio.TimeoutError as err:
+                # A late reply would be read as the answer to the next request.
+                self._drop_connection()
                 raise TimeoutError(f"No response for request: {request}") from err
-            except Exception as err:
-                raise ConnectionError(f"Error reading response: {err}") from err
+            except BaseException as err:
+                self._drop_connection()
+                if isinstance(err, Exception) and not isinstance(err, ConnectionError):
+                    raise ConnectionError(f"Error reading response: {err}") from err
+                raise
 
+            response = raw.decode(errors="ignore").strip()
             if not response:
+                self._drop_connection()
                 raise TimeoutError(f"Empty response for request: {request}")
 
             _LOGGER.debug("Breezart Native RX: %s", response)
@@ -619,7 +648,7 @@ class BreezartTCPClient:
 
         temp_supply = _get(VSENS_IDX_TEMP_SUPPLY, is_temp=True)
         temp_outdoor = _get(VSENS_IDX_TEMP_OUTDOOR, is_temp=True)
-        temp_water = _get(VSENS_IDX_TEMP_WATER)
+        temp_water = _get(VSENS_IDX_TEMP_WATER, is_temp=True)
         self._last_temp_supply = temp_supply
         self._last_temp_outdoor = temp_outdoor
         self._last_temp_water = temp_water
@@ -627,7 +656,7 @@ class BreezartTCPClient:
         return {
             KEY_TEMP_SUPPLY: temp_supply,
             KEY_HUMIDITY_SUPPLY: _get(VSENS_IDX_HUMID_SUPPLY),
-            KEY_TEMP_ROOM: _get(VSENS_IDX_TEMP_ROOM),
+            KEY_TEMP_ROOM: _get(VSENS_IDX_TEMP_ROOM, is_temp=True),
             KEY_HUMIDITY_ROOM: _get(VSENS_IDX_HUMID_ROOM),
             KEY_TEMP_OUTDOOR: temp_outdoor,
             KEY_HUMIDITY_OUTDOOR: _get(VSENS_IDX_HUMID_OUTDOOR),
@@ -761,14 +790,58 @@ class BreezartModbusClient:
             self._writer = None
             self._reader = None
 
+    def _drop_connection(self) -> None:
+        """Close the socket without waiting so a desynced stream is never reused."""
+        if self._writer:
+            self._writer.close()
+        self._writer = None
+        self._reader = None
+
+    async def _transact(self, frame: bytes, tx_id: int) -> bytes:
+        """Send an MBAP frame and return the matching response PDU.
+
+        Must be called with self._lock held. Any transport-level failure (timeout,
+        short read, transaction ID mismatch) drops the connection, because the
+        stream position is no longer known and a late reply would otherwise be
+        taken as the answer to the next request. Modbus exception replies are
+        complete frames, so they leave the connection intact.
+        """
+        if not self._writer or not self._reader:
+            raise ConnectionError("Not connected to Breezart Modbus TCP")
+        try:
+            self._writer.write(frame)
+            await self._writer.drain()
+            await asyncio.sleep(MODBUS_READ_DELAY_SECONDS)
+
+            header = await asyncio.wait_for(
+                self._reader.readexactly(MODBUS_MBAP_HEADER_LEN),
+                timeout=self.timeout,
+            )
+            rx_tx_id, _rx_proto, rx_len, _rx_unit = struct.unpack(">HHHB", header)
+            pdu = await asyncio.wait_for(
+                self._reader.readexactly(max(0, rx_len - 1)),
+                timeout=self.timeout,
+            )
+        except BaseException:
+            self._drop_connection()
+            raise
+
+        _LOGGER.debug("Modbus RX (tx=%d): %s %s", rx_tx_id, header.hex(" "), pdu.hex(" "))
+        if rx_tx_id != tx_id:
+            self._drop_connection()
+            raise ConnectionError(
+                f"Modbus transaction ID mismatch: sent {tx_id}, received {rx_tx_id}"
+            )
+        if not pdu:
+            self._drop_connection()
+            raise ConnectionError(f"Empty Modbus PDU for tx={tx_id}")
+        return pdu
+
     async def _read_registers(
         self, func_code: int, start_addr: int, count: int
     ) -> list[int]:
         """Read Holding (0x03) or Input (0x04) registers via MBAP framing."""
         async with self._lock:
-            if not self._writer or not self._reader:
-                raise ConnectionError("Not connected to Breezart Modbus TCP")
-
             tx_id = self._next_tx_id()
             frame = struct.pack(
                 ">HHHBBHH",
@@ -787,52 +860,25 @@ class BreezartModbusClient:
                 count,
                 frame.hex(" "),
             )
-            self._writer.write(frame)
-            await self._writer.drain()
-            await asyncio.sleep(MODBUS_READ_DELAY_SECONDS)
+            pdu = await self._transact(frame, tx_id)
 
-            header = await asyncio.wait_for(
-                self._reader.readexactly(MODBUS_MBAP_HEADER_LEN),
-                timeout=self.timeout,
-            )
-            rx_tx_id, _rx_proto, rx_len, _rx_unit = struct.unpack(">HHHB", header)
-            pdu_len = max(0, rx_len - 1)
-            pdu = await asyncio.wait_for(
-                self._reader.readexactly(pdu_len),
-                timeout=self.timeout,
-            )
-            _LOGGER.debug(
-                "Modbus RX (tx=%d): %s %s",
-                rx_tx_id,
-                header.hex(" "),
-                pdu.hex(" "),
+        if pdu[0] & MODBUS_EXCEPTION_MASK:
+            exc_code = pdu[1] if len(pdu) > 1 else 0
+            raise ValueError(
+                f"Modbus exception 0x{exc_code:02x} on FC 0x{func_code:02x} addr={start_addr}"
             )
 
-            if not pdu:
-                raise TimeoutError(f"Empty Modbus PDU for addr={start_addr}")
+        expected_bytes = count * 2
+        if len(pdu) < 2 or pdu[1] < expected_bytes or len(pdu) < 2 + expected_bytes:
+            raise ValueError(
+                f"Short Modbus payload: got {max(0, len(pdu) - 2)} bytes, expected {expected_bytes}"
+            )
 
-            rx_fc = pdu[0]
-            if rx_fc & MODBUS_EXCEPTION_MASK:
-                exc_code = pdu[1] if len(pdu) > 1 else 0
-                raise ValueError(
-                    f"Modbus exception 0x{exc_code:02x} on FC 0x{func_code:02x} addr={start_addr}"
-                )
-
-            byte_count = pdu[1]
-            expected_bytes = count * 2
-            if byte_count < expected_bytes or len(pdu) < 2 + expected_bytes:
-                raise ValueError(
-                    f"Short Modbus payload: got {len(pdu) - 2} bytes, expected {expected_bytes}"
-                )
-
-            return list(struct.unpack(f">{count}H", pdu[2 : 2 + expected_bytes]))
+        return list(struct.unpack(f">{count}H", pdu[2 : 2 + expected_bytes]))
 
     async def _write_register(self, reg_addr: int, value: int) -> None:
         """Write a single Holding register (FC 0x06) via MBAP framing."""
         async with self._lock:
-            if not self._writer or not self._reader:
-                raise ConnectionError("Not connected to Breezart Modbus TCP")
-
             tx_id = self._next_tx_id()
             raw_val = value & MAX_UINT16
             frame = struct.pack(
@@ -851,25 +897,11 @@ class BreezartModbusClient:
                 value,
                 frame.hex(" "),
             )
-            self._writer.write(frame)
-            await self._writer.drain()
-            await asyncio.sleep(MODBUS_READ_DELAY_SECONDS)
+            pdu = await self._transact(frame, tx_id)
 
-            header = await asyncio.wait_for(
-                self._reader.readexactly(MODBUS_MBAP_HEADER_LEN),
-                timeout=self.timeout,
-            )
-            _rx_tx_id, _rx_proto, rx_len, _rx_unit = struct.unpack(">HHHB", header)
-            pdu_len = max(0, rx_len - 1)
-            pdu = await asyncio.wait_for(
-                self._reader.readexactly(pdu_len),
-                timeout=self.timeout,
-            )
-            if pdu and (pdu[0] & MODBUS_EXCEPTION_MASK):
-                exc_code = pdu[1] if len(pdu) > 1 else 0
-                raise ValueError(
-                    f"Modbus write exception 0x{exc_code:02x} on reg={reg_addr}"
-                )
+        if pdu[0] & MODBUS_EXCEPTION_MASK:
+            exc_code = pdu[1] if len(pdu) > 1 else 0
+            raise ValueError(f"Modbus write exception 0x{exc_code:02x} on reg={reg_addr}")
 
     def _apply_hw_temp_bounds(self, min_task_raw: int, max_task_raw: int) -> None:
         """Decode and apply hardware min/max temperature bounds from INPUT[70..71] if not overridden."""
@@ -1079,7 +1111,7 @@ class BreezartModbusClient:
             KEY_UNIT_STATE: unit_state,
             KEY_MODE: mode,
             KEY_MODE_SET: mode_set,
-            KEY_TEMPERATURE: cur_t if cur_t is not None else temp_target,
+            KEY_TEMPERATURE: cur_t,
             KEY_TEMPERATURE_TARGET: temp_target,
             KEY_HUMIDITY: round(cur_h) if cur_h is not None else None,
             KEY_SPEED: speed,
@@ -1685,5 +1717,9 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         await self._async_send_notification(NOTIFY_EVENT_OFFLINE)
                 raise UpdateFailed(f"Connection error: {err}") from err
             except Exception as err:
+                # Unparseable/short replies mean the stream can't be trusted: reconnect next poll.
+                self._properties_loaded = False
+                self._cached_sensors = {}
+                await self.client.disconnect()
                 raise UpdateFailed(f"Error communicating with Breezart: {err}") from err
 
