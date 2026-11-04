@@ -48,6 +48,11 @@
           "notify_other_errors": "Notify on other errors and warnings"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Breezart controller",
+      "invalid_auth": "Invalid remote access password",
+      "unknown": "Unexpected error occurred"
     }
   },
   "selector": {

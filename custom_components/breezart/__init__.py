@@ -96,7 +96,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for key in NOTIFICATION_SETTING_KEYS
     }
 
-    port = _resolve_port(protocol, int(entry.data.get(CONF_PORT, DEFAULT_PORT)))
+    # The options flow stores the port it verified; older entries only have it in data.
+    port = _resolve_port(
+        protocol,
+        int(entry.options.get(CONF_PORT, entry.data.get(CONF_PORT, DEFAULT_PORT))),
+    )
     password = entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
 
     client = create_breezart_client(
