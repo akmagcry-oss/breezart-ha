@@ -215,6 +215,7 @@ async def test_energy_consumption_sensor_accumulates_kwh(
     # Seed 1.5 kWh and simulate 60s elapsed at 1800 W (+0.03 kWh -> 1.53 kWh)
     coordinator.seed_energy_kwh(1.5)
     fake_client.sensors[KEY_POWER_CONSUMPTION] = 1800
+    coordinator._cached_sensors = {}
     coordinator._last_energy_ts -= 60.0
     await coordinator.async_refresh()
     await hass.async_block_till_done()
