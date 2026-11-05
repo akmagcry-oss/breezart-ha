@@ -1,6 +1,0 @@
-{
-  "name": "Breezart HA Integration Studio",
-  "description": "Refactored Breezart Home Assistant Integration with centralized constants, multi-model presets (400 Lux, 550 Lux, 550 Aqua, 700 Lux, 1000 Lux), and full Russian/English internationalization.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
