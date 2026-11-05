@@ -132,3 +132,47 @@ async def test_notification_toggle_from_options_applies_live(
     mock_reload.assert_not_called()
     assert coordinator.is_notification_enabled(KEY_NOTIFY_POWER) is False
     assert hass.states.get(entity_id_for(hass, "switch", KEY_NOTIFY_POWER)).state == "off"
+
+
+def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
+    """Verify manifest.json key order (hassfest), hacs.json keys, and CI workflow."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+
+    # 1. hassfest requires manifest.json keys: domain, name, then alphabetical
+    manifest_raw = json.loads(
+        (root / "custom_components" / "breezart" / "manifest.json").read_text(encoding="utf-8")
+    )
+    keys = list(manifest_raw.keys())
+    assert keys[:2] == ["domain", "name"]
+    assert keys[2:] == sorted(keys[2:]), (
+        f"hassfest requires alphabetical keys after domain/name, got {keys[2:]}"
+    )
+
+    # 2. hacs.json must only use allowed HACS keys (no iot_class)
+    allowed_hacs_keys = {
+        "name",
+        "content_in_root",
+        "zip_release",
+        "filename",
+        "render_readme",
+        "hide_default_branch",
+        "country",
+        "homeassistant",
+        "hacs",
+        "persistent_directory",
+    }
+    hacs_raw = json.loads((root / "hacs.json").read_text(encoding="utf-8"))
+    extra_hacs_keys = set(hacs_raw.keys()) - allowed_hacs_keys
+    assert not extra_hacs_keys, f"Invalid keys in hacs.json: {extra_hacs_keys}"
+
+    # 3. GitHub Actions workflow must exist and include pytest, hassfest, and hacs validation
+    workflow_path = root / ".github" / "workflows" / "validate.yml"
+    assert workflow_path.is_file(), ".github/workflows/validate.yml must exist"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    assert "pytest" in workflow_text
+    assert "hassfest" in workflow_text
+    assert "hacs/action" in workflow_text
+
