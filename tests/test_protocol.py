@@ -405,7 +405,7 @@ async def test_discover_breezart_devices_identifies_modbus_and_native(serve) -> 
             host="127.0.0.1",
             port=modbus_port,
             protocol=PROTOCOL_MODBUS_TCP,
-            firmware_ver="JL204c7",
+            firmware_ver="12",
             requires_password=False,
         ),
         DiscoveredBreezartDevice(

@@ -1601,18 +1601,7 @@ async def async_discover_breezart_devices(
         for proto, port in candidates
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    discovered = [
-        res for res in results if isinstance(res, DiscoveredBreezartDevice)
-    ]
-
-    def _sort_key(dev: DiscoveredBreezartDevice) -> tuple[int, tuple[int, ...], str, int]:
-        try:
-            ip_parts = tuple(int(p) for p in dev.host.split("."))
-            return (0, ip_parts, dev.host, dev.port)
-        except ValueError:
-            return (1, (), dev.host, dev.port)
-
-    return sorted(discovered, key=_sort_key)
+    return [res for res in results if isinstance(res, DiscoveredBreezartDevice)]
 
 
 def _resolve_notify_targets(
