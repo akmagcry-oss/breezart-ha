@@ -7,11 +7,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfPower, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -24,6 +25,7 @@ from .const import (
     KEY_CO2,
     KEY_COLOR_IND,
     KEY_COLOR_MSG,
+    KEY_ENERGY_CONSUMPTION,
     KEY_FILTER1_POLLUTION,
     KEY_FILTER2_POLLUTION,
     KEY_FILTER3_POLLUTION,
@@ -177,6 +179,42 @@ class BreezartFilterSensor(BreezartSensor):
         }
 
 
+class BreezartEnergySensor(BreezartSensor, RestoreEntity):
+    """Cumulative energy sensor (kWh) for the Home Assistant Energy Dashboard."""
+
+    _attr_suggested_display_precision = 3
+
+    def __init__(
+        self,
+        coordinator: BreezartDataCoordinator,
+        enabled_default: bool = True,
+    ) -> None:
+        """Initialize the cumulative energy sensor."""
+        super().__init__(
+            coordinator,
+            key=KEY_ENERGY_CONSUMPTION,
+            device_class=SensorDeviceClass.ENERGY,
+            unit=UnitOfEnergy.KILO_WATT_HOUR,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            enabled_default=enabled_default,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore previous cumulative kWh total when Home Assistant restarts."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (
+            None,
+            "",
+            "unknown",
+            "unavailable",
+        ):
+            try:
+                self.coordinator.seed_energy_kwh(float(last_state.state))
+            except (ValueError, TypeError):
+                pass
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -256,13 +294,17 @@ async def async_setup_entry(
             unit=PERCENTAGE,
             enabled_default=_is_enabled(KEY_SPEED_FACT),
         ),
-        # --- Power Consumption ---
+        # --- Power & Energy Consumption ---
         BreezartSensor(
             coordinator,
             KEY_POWER_CONSUMPTION,
             SensorDeviceClass.POWER,
             UnitOfPower.WATT,
             enabled_default=_is_enabled(KEY_POWER_CONSUMPTION),
+        ),
+        BreezartEnergySensor(
+            coordinator,
+            enabled_default=_is_enabled(KEY_ENERGY_CONSUMPTION),
         ),
         # --- Filter Dust ---
         BreezartSensor(

@@ -168,6 +168,9 @@
       "power_consumption": {
         "name": "Потребляемая мощность"
       },
+      "energy_consumption": {
+        "name": "Потреблённая энергия"
+      },
       "filter_dust": {
         "name": "Загрязнённость фильтра"
       },

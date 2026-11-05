@@ -205,6 +205,7 @@ KEY_TEMP_OUTDOOR: Final[str] = "temp_outdoor"
 KEY_HUMIDITY_OUTDOOR: Final[str] = "humidity_outdoor"
 KEY_TEMP_WATER: Final[str] = "temp_water"
 KEY_POWER_CONSUMPTION: Final[str] = "power_consumption"
+KEY_ENERGY_CONSUMPTION: Final[str] = "energy_consumption"
 KEY_CO2: Final[str] = "co2"
 KEY_VOC: Final[str] = "voc"
 KEY_FILTER1_POLLUTION: Final[str] = "filter1_pollution"
@@ -526,6 +527,7 @@ BASE_ENABLED_SENSORS: Final[tuple[str, ...]] = (
     KEY_MSG,
     KEY_FIRMWARE_VER,
     KEY_PROTOCOL_VER,
+    KEY_ENERGY_CONSUMPTION,
 )
 
 # Model configuration presets for Breezart lineup
@@ -714,6 +716,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_SPEED_TARGET: "Заданная скорость",
             KEY_SPEED_FACT: "Фактическая скорость",
             KEY_POWER_CONSUMPTION: "Потребляемая мощность",
+            KEY_ENERGY_CONSUMPTION: "Потреблённая энергия",
             KEY_FILTER_DUST: "Загрязнённость фильтра",
             KEY_HUMIDITY: "Влажность",
             KEY_UNIT_STATE: "Состояние установки",
@@ -825,6 +828,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_SPEED_TARGET: "Target fan speed",
             KEY_SPEED_FACT: "Actual fan speed",
             KEY_POWER_CONSUMPTION: "Power consumption",
+            KEY_ENERGY_CONSUMPTION: "Energy consumption",
             KEY_FILTER_DUST: "Filter pollution",
             KEY_HUMIDITY: "Humidity",
             KEY_UNIT_STATE: "Unit state",

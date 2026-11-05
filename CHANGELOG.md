@@ -5,12 +5,19 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 ## [1.3.0]
 
 ### Added
+- **Automatic Local Network Discovery During Setup (`custom_components/breezart/coordinator.py`, `custom_components/breezart/config_flow.py`, `tests/test_protocol.py`, `tests/test_config_flow.py`)**:
+  - Added `async_discover_breezart_devices()`, `build_subnet_hosts()`, and `DiscoveredBreezartDevice` to scan the local `/24` IPv4 subnet concurrently (ports `502` Modbus TCP and `1560` Native TCP) while skipping already-configured entries.
+  - Each open port is verified with a real Breezart protocol handshake on a single TCP connection (`get_properties()`, including recognizing `VEPas_` password-protected Native TCP units), pre-filling `host`, `port`, and `protocol` in the setup form and providing a `discovered_device` selector when one or more units are found on the LAN.
+- **Home Assistant Repairs Panel Integration (`custom_components/breezart/coordinator.py`, `custom_components/breezart/__init__.py`, `tests/test_entities.py`)**:
+  - Added `evaluate_repair_issues()` and `issue_registry` synchronization (`_sync_repair_issues()`, `clear_repair_issues()`) to automatically create localized **Home Assistant Repairs** issues for `overheat_hazard` (`CRITICAL`), `freeze_hazard` (`CRITICAL`), `filter_replacement` (`WARNING`, with current `{pollution}%`), and `controller_error` (`ERROR` / `WARNING`, with `{message}`), and automatically clear them as soon as the condition resolves.
+- **Cumulative Energy Sensor (kWh) for Home Assistant Energy Dashboard (`custom_components/breezart/sensor.py`, `custom_components/breezart/coordinator.py`, `tests/test_entities.py`)**:
+  - Added `BreezartEnergySensor` (`sensor.breezart_energy_consumption`, `SensorDeviceClass.ENERGY`, `UnitOfEnergy.KILO_WATT_HOUR`, `SensorStateClass.TOTAL_INCREASING`) with `RestoreEntity` state persistence across Home Assistant restarts and monotonic Riemann integration (`integrate_energy_kwh()`) from instantaneous power (`power_consumption`, W) for direct integration with the **Home Assistant Energy Dashboard**.
 - **1-Click Device Diagnostics Download (`custom_components/breezart/diagnostics.py`, `tests/test_diagnostics.py`)**:
   - Added `async_get_config_entry_diagnostics` to export a structured JSON snapshot of the integration configuration, controller firmware/protocol version, hardware capabilities (`temp_min`, `temp_max`, `speed_min`, `speed_max`, `has_heater`, `has_cooler`, `has_humidifier`, `has_vav`, disabled optional Modbus blocks), and live coordinator state/sensor values directly from the Home Assistant Device page.
   - Sensitive configuration fields (`host`, `password`, `unique_id`) are automatically redacted via `async_redact_data`.
-- **GitHub Actions CI Workflow (`.github/workflows/validate.yml`, `tests/test_init.py`)**:
+- **GitHub Actions CI Workflow & Repository License (`.github/workflows/validate.yml`, `LICENSE`, `tests/test_init.py`)**:
   - Added automated CI pipeline running the `pytest` test suite, official Home Assistant `hassfest` validation (`home-assistant/actions/hassfest`), and `HACS` validation (`hacs/action`) on every push and pull request.
-  - Sorted `custom_components/breezart/manifest.json` keys and cleaned up `hacs.json` schema for strict `hassfest` and HACS compliance.
+  - Added root `LICENSE` (MIT), sorted `custom_components/breezart/manifest.json` keys, and cleaned up `hacs.json` schema for strict `hassfest` and HACS compliance.
 
 ## [1.2.4]
 

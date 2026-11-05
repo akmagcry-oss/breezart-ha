@@ -175,3 +175,49 @@ async def test_repairs_issues_created_and_cleared_on_poll(
 
     assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_FILTER}") is None
     assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_OVERHEAT}") is None
+
+
+def test_integrate_energy_kwh_pure_logic() -> None:
+    """Pure Riemann integration accumulates Watt-seconds into kWh monotonically."""
+    from custom_components.breezart.coordinator import integrate_energy_kwh
+
+    # 1800 W for 60 seconds = 1800 * 60 / 3_600_000 = 0.03 kWh
+    val = integrate_energy_kwh(0.0, 1800, 60.0)
+    assert val == pytest.approx(0.03, rel=1e-5)
+
+    # Zero or None power keeps cumulative total unchanged (monotonic)
+    assert integrate_energy_kwh(val, 0, 60.0) == pytest.approx(0.03, rel=1e-5)
+    assert integrate_energy_kwh(val, None, 60.0) == pytest.approx(0.03, rel=1e-5)
+    assert integrate_energy_kwh(val, 1800, -5.0) == pytest.approx(0.03, rel=1e-5)
+
+
+async def test_energy_consumption_sensor_accumulates_kwh(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """Energy sensor is created with TOTAL_INCREASING kWh and accumulates energy on polls."""
+    from custom_components.breezart.const import (
+        DATA_COORDINATOR,
+        DOMAIN,
+        KEY_ENERGY_CONSUMPTION,
+        KEY_POWER_CONSUMPTION,
+    )
+
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    entity_id = entity_id_for(hass, "sensor", KEY_ENERGY_CONSUMPTION)
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes.get("unit_of_measurement") == "kWh"
+    assert state.attributes.get("device_class") == "energy"
+    assert state.attributes.get("state_class") == "total_increasing"
+
+    # Seed 1.5 kWh and simulate 60s elapsed at 1800 W (+0.03 kWh -> 1.53 kWh)
+    coordinator.seed_energy_kwh(1.5)
+    fake_client.sensors[KEY_POWER_CONSUMPTION] = 1800
+    coordinator._last_energy_ts -= 60.0
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    updated = hass.states.get(entity_id)
+    assert float(updated.state) == pytest.approx(1.53, rel=1e-2)

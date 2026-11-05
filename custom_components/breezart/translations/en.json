@@ -168,6 +168,9 @@
       "power_consumption": {
         "name": "Power consumption"
       },
+      "energy_consumption": {
+        "name": "Energy consumption"
+      },
       "filter_dust": {
         "name": "Filter pollution"
       },

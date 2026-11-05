@@ -87,6 +87,7 @@ from .const import (
     KEY_COLOR_MSG,
     KEY_DANGER_FREEZE,
     KEY_DANGER_OVERHEAT,
+    KEY_ENERGY_CONSUMPTION,
     KEY_FILTER1_POLLUTION,
     KEY_FILTER2_POLLUTION,
     KEY_FILTER3_POLLUTION,
@@ -1726,6 +1727,29 @@ def evaluate_repair_issues(
     return active
 
 
+def integrate_energy_kwh(
+    current_kwh: float,
+    power_watts: float | int | None,
+    elapsed_seconds: float,
+    *,
+    max_step_seconds: float = 300.0,
+) -> float:
+    """Integrate instantaneous power (W) over elapsed_seconds into cumulative kWh.
+
+    Clamps negative power or negative/huge time jumps so the TOTAL_INCREASING
+    counter stays strictly non-decreasing and accurate.
+    """
+    base = max(0.0, float(current_kwh))
+    if power_watts is None or elapsed_seconds <= 0:
+        return round(base, 6)
+    pw = float(power_watts)
+    if pw <= 0:
+        return round(base, 6)
+    dt = min(float(elapsed_seconds), max_step_seconds)
+    delta_kwh = (pw * dt) / 3_600_000.0
+    return round(base + delta_kwh, 6)
+
+
 class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that polls Breezart for state and sensor data and dispatches event notifications."""
 
@@ -1761,6 +1785,8 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._properties_loaded = False
         self._cached_sensors: dict[str, Any] = {}
         self._sensors_update_counter = 0
+        self._energy_kwh: float = 0.0
+        self._last_energy_ts: float | None = None
 
         # Edge-detection, debounce, and per-event cooldown state for notifications
         self._has_initial_snapshot = False
@@ -2013,6 +2039,14 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for issue_key in REPAIR_ISSUE_KEYS:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(issue_key))
 
+    def seed_energy_kwh(self, value: float) -> None:
+        """Seed or restore cumulative energy counter (kWh) monotonically."""
+        self._energy_kwh = max(self._energy_kwh, max(0.0, float(value)))
+        if self._last_energy_ts is None:
+            self._last_energy_ts = time.monotonic()
+        if isinstance(self.data, dict):
+            self.data[KEY_ENERGY_CONSUMPTION] = round(self._energy_kwh, 4)
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch latest data from Breezart with serialized polling and offline debounce."""
         async with self._update_lock:
@@ -2050,6 +2084,16 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data[KEY_HAS_HUMIDIFIER] = self.client.has_humidifier
                 data[KEY_FIRMWARE_VER] = self.client.firmware_ver
                 data[KEY_PROTOCOL_VER] = self.client.protocol_ver
+
+                now = time.monotonic()
+                if self._last_energy_ts is not None:
+                    self._energy_kwh = integrate_energy_kwh(
+                        self._energy_kwh,
+                        data.get(KEY_POWER_CONSUMPTION),
+                        now - self._last_energy_ts,
+                    )
+                self._last_energy_ts = now
+                data[KEY_ENERGY_CONSUMPTION] = round(self._energy_kwh, 4)
 
                 self._consecutive_failures = 0
                 self._sync_repair_issues(data)
