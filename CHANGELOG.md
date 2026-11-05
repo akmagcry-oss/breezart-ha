@@ -2,6 +2,16 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.3.0]
+
+### Added
+- **1-Click Device Diagnostics Download (`custom_components/breezart/diagnostics.py`, `tests/test_diagnostics.py`)**:
+  - Added `async_get_config_entry_diagnostics` to export a structured JSON snapshot of the integration configuration, controller firmware/protocol version, hardware capabilities (`temp_min`, `temp_max`, `speed_min`, `speed_max`, `has_heater`, `has_cooler`, `has_humidifier`, `has_vav`, disabled optional Modbus blocks), and live coordinator state/sensor values directly from the Home Assistant Device page.
+  - Sensitive configuration fields (`host`, `password`, `unique_id`) are automatically redacted via `async_redact_data`.
+- **GitHub Actions CI Workflow (`.github/workflows/validate.yml`, `tests/test_init.py`)**:
+  - Added automated CI pipeline running the `pytest` test suite, official Home Assistant `hassfest` validation (`home-assistant/actions/hassfest`), and `HACS` validation (`hacs/action`) on every push and pull request.
+  - Sorted `custom_components/breezart/manifest.json` keys and cleaned up `hacs.json` schema for strict `hassfest` and HACS compliance.
+
 ## [1.2.4]
 
 ### Fixed
