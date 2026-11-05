@@ -49,7 +49,12 @@ READ_DELAY_SECONDS: Final[float] = 0.03
 MODBUS_READ_DELAY_SECONDS: Final[float] = 0.06
 READ_BUFFER_SIZE: Final[int] = 4096
 
-# Config flow error & abort keys
+# Config flow error, discovery & abort keys
+CONF_DISCOVERED_DEVICE: Final[str] = "discovered_device"
+DISCOVERY_MANUAL: Final[str] = "manual"
+DISCOVERY_CONNECT_TIMEOUT: Final[float] = 0.35
+DISCOVERY_PROBE_TIMEOUT: Final[float] = 1.0
+DISCOVERY_CONCURRENCY: Final[int] = 128
 ERR_CANNOT_CONNECT: Final[str] = "cannot_connect"
 ERR_INVALID_AUTH: Final[str] = "invalid_auth"
 ERR_UNKNOWN: Final[str] = "unknown"

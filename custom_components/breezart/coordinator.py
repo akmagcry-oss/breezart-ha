@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+import socket
 import struct
 import time
 from collections.abc import AsyncIterator, Awaitable, Iterable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -51,6 +54,7 @@ from .const import (
     COLOR_MSG_ERROR,
     COLOR_MSG_NORMAL,
     COLOR_MSG_WARNING,
+    DEFAULT_HOST,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NAME,
@@ -61,6 +65,9 @@ from .const import (
     DEFAULT_SLAVE_ID,
     DEFAULT_TIMEOUT,
     DELIMITER,
+    DISCOVERY_CONCURRENCY,
+    DISCOVERY_CONNECT_TIMEOUT,
+    DISCOVERY_PROBE_TIMEOUT,
     DOMAIN,
     ERROR_PREFIX,
     EVENT_BREEZART_NOTIFICATION,
@@ -1440,6 +1447,172 @@ async def async_detect_and_connect_client(
     if last_err is not None:
         raise last_err
     raise ConnectionError(f"Unable to connect to Breezart at {host}:{port}")
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredBreezartDevice:
+    """Immutable descriptor of a Breezart controller discovered on the local network."""
+
+    host: str
+    port: int
+    protocol: str
+    firmware_ver: str | None = None
+    requires_password: bool = False
+
+    @property
+    def key(self) -> str:
+        """Return unique host:port selector key."""
+        return f"{self.host}:{self.port}"
+
+    def format_label(self) -> str:
+        """Return human-readable selector label for config flow UI."""
+        proto_name = (
+            "Modbus TCP" if self.protocol == PROTOCOL_MODBUS_TCP else "Native TCP"
+        )
+        fw_part = f", fw {self.firmware_ver}" if self.firmware_ver else ""
+        return f"{self.host}:{self.port} ({proto_name}{fw_part})"
+
+
+def get_local_ipv4(target_ip: str = DEFAULT_HOST) -> str | None:
+    """Determine the local private IPv4 address used to route traffic on the LAN."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect((target_ip, 80))
+            local_ip = str(sock.getsockname()[0])
+        ip_obj = ipaddress.IPv4Address(local_ip)
+        if ip_obj.is_private and not ip_obj.is_loopback and not ip_obj.is_link_local:
+            return local_ip
+    except Exception:
+        return None
+    return None
+
+
+def build_subnet_hosts(
+    local_ip: str | None,
+    *,
+    exclude_hosts: Iterable[str] = (),
+) -> list[str]:
+    """Return all /24 private LAN host IPs for local_ip, excluding local_ip and exclude_hosts."""
+    if not local_ip:
+        return []
+    try:
+        ip_obj = ipaddress.IPv4Address(local_ip.strip())
+    except ValueError:
+        return []
+    if not ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+        return []
+
+    excluded = {local_ip.strip(), *(str(h).strip() for h in exclude_hosts if h)}
+    network = ipaddress.IPv4Network(f"{ip_obj}/24", strict=False)
+    return [str(host) for host in network.hosts() if str(host) not in excluded]
+
+
+async def _async_probe_breezart_endpoint(
+    host: str,
+    protocol: str,
+    port: int,
+    *,
+    connect_timeout: float = DISCOVERY_CONNECT_TIMEOUT,
+    probe_timeout: float = DISCOVERY_PROBE_TIMEOUT,
+) -> DiscoveredBreezartDevice | None:
+    """Probe a single (host, port) with a Breezart protocol handshake on one TCP connection."""
+    client = create_breezart_client(
+        host=host,
+        port=port,
+        password=DEFAULT_PASSWORD,
+        model=MODEL_CUSTOM,
+        protocol=protocol,
+        slave_id=DEFAULT_SLAVE_ID,
+        timeout=connect_timeout,  # type: ignore[arg-type]
+    )
+    try:
+        await client.connect()
+        client.timeout = probe_timeout  # type: ignore[assignment]
+        await client.get_properties()
+        return DiscoveredBreezartDevice(
+            host=host,
+            port=port,
+            protocol=protocol,
+            firmware_ver=str(client.firmware_ver) if client.firmware_ver else None,
+            requires_password=False,
+        )
+    except PermissionError:
+        if protocol == PROTOCOL_NATIVE_TCP:
+            # A VEPas_ reply proves this endpoint is a genuine Breezart Native TCP unit
+            return DiscoveredBreezartDevice(
+                host=host,
+                port=port,
+                protocol=PROTOCOL_NATIVE_TCP,
+                firmware_ver=None,
+                requires_password=True,
+            )
+        return None
+    except Exception:
+        return None
+    finally:
+        await client.disconnect()
+
+
+async def async_discover_breezart_devices(
+    *,
+    hosts: Iterable[str] | None = None,
+    exclude_hosts: Iterable[str] = (),
+    candidates: tuple[tuple[str, int], ...] = (
+        (PROTOCOL_MODBUS_TCP, DEFAULT_MODBUS_PORT),
+        (PROTOCOL_NATIVE_TCP, DEFAULT_PORT),
+    ),
+    connect_timeout: float = DISCOVERY_CONNECT_TIMEOUT,
+    probe_timeout: float = DISCOVERY_PROBE_TIMEOUT,
+    concurrency: int = DISCOVERY_CONCURRENCY,
+) -> list[DiscoveredBreezartDevice]:
+    """Scan local /24 network (or explicit hosts) for Breezart Modbus TCP and Native TCP controllers."""
+    if hosts is None:
+        target_hosts = build_subnet_hosts(
+            get_local_ipv4(), exclude_hosts=exclude_hosts
+        )
+    else:
+        excluded = {str(h).strip() for h in exclude_hosts if h}
+        target_hosts = [
+            str(h).strip()
+            for h in hosts
+            if str(h).strip() and str(h).strip() not in excluded
+        ]
+
+    if not target_hosts or not candidates:
+        return []
+
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _bounded_probe(
+        host: str, proto: str, port: int
+    ) -> DiscoveredBreezartDevice | None:
+        async with sem:
+            return await _async_probe_breezart_endpoint(
+                host,
+                proto,
+                port,
+                connect_timeout=connect_timeout,
+                probe_timeout=probe_timeout,
+            )
+
+    tasks = [
+        _bounded_probe(host, proto, port)
+        for host in target_hosts
+        for proto, port in candidates
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    discovered = [
+        res for res in results if isinstance(res, DiscoveredBreezartDevice)
+    ]
+
+    def _sort_key(dev: DiscoveredBreezartDevice) -> tuple[int, tuple[int, ...], str, int]:
+        try:
+            ip_parts = tuple(int(p) for p in dev.host.split("."))
+            return (0, ip_parts, dev.host, dev.port)
+        except ValueError:
+            return (1, (), dev.host, dev.port)
+
+    return sorted(discovered, key=_sort_key)
 
 
 def _resolve_notify_targets(

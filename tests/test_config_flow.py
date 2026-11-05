@@ -169,3 +169,65 @@ async def test_options_probe_releases_running_connection(
     await coordinator.async_refresh()
     assert fake_client.is_connected
     assert coordinator.last_update_success
+
+
+async def test_user_flow_autodiscovery_prefills_and_selects_device(hass: HomeAssistant) -> None:
+    """Auto-discovery pre-fills the first found device and lets the user pick another from the dropdown."""
+    from custom_components.breezart.const import CONF_DISCOVERED_DEVICE
+    from custom_components.breezart.coordinator import DiscoveredBreezartDevice
+
+    discovered = [
+        DiscoveredBreezartDevice(
+            host="192.168.1.55",
+            port=502,
+            protocol=PROTOCOL_MODBUS_TCP,
+            firmware_ver="204.1.7",
+        ),
+        DiscoveredBreezartDevice(
+            host="192.168.1.88",
+            port=1560,
+            protocol=PROTOCOL_NATIVE_TCP,
+            requires_password=True,
+        ),
+    ]
+
+    with patch(
+        "custom_components.breezart.config_flow.async_discover_breezart_devices",
+        AsyncMock(return_value=discovered),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    # Select the second discovered unit via CONF_DISCOVERED_DEVICE dropdown
+    with patch(
+        DETECT, AsyncMock(return_value=(FakeClient(), PROTOCOL_NATIVE_TCP, 1560))
+    ) as mock_detect, patch(
+        "custom_components.breezart.async_setup_entry", return_value=True
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_DISCOVERED_DEVICE: "192.168.1.88:1560",
+                CONF_MODEL: "custom",
+                CONF_PROTOCOL: PROTOCOL_MODBUS_TCP,
+                CONF_HOST: "192.168.1.55",
+                CONF_PORT: 502,
+                CONF_SLAVE_ID: 1,
+                CONF_PASSWORD: "21579",
+                CONF_SPEED_MAX: 10,
+                CONF_TEMP_MIN: 5,
+                CONF_TEMP_MAX: 35,
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_detect.call_args.kwargs["host"] == "192.168.1.88"
+    assert mock_detect.call_args.kwargs["port"] == 1560
+    assert mock_detect.call_args.kwargs["protocol"] == PROTOCOL_NATIVE_TCP
+    assert result["data"][CONF_HOST] == "192.168.1.88"
+    assert result["data"][CONF_PORT] == 1560
+    assert result["data"][CONF_PROTOCOL] == PROTOCOL_NATIVE_TCP

@@ -24,8 +24,11 @@ from custom_components.breezart.const import (
 from custom_components.breezart.coordinator import (
     BreezartModbusClient,
     BreezartTCPClient,
+    DiscoveredBreezartDevice,
     ModbusExceptionError,
     async_detect_and_connect_client,
+    async_discover_breezart_devices,
+    build_subnet_hosts,
 )
 
 # Fake devices listen on 127.0.0.1; the HA test harness blocks sockets by default.
@@ -350,3 +353,66 @@ async def test_detect_failure_closes_probe_sockets(protocol: str) -> None:
     assert result is None
     assert log  # at least one candidate was tried
     assert made and not any(client.connected for client in made)
+
+
+# --- Local network discovery ------------------------------------------------
+
+
+def test_build_subnet_hosts_filters_local_and_excluded_ips() -> None:
+    """Subnet host builder returns /24 private hosts excluding local and configured IPs."""
+    hosts = build_subnet_hosts("192.168.1.42", exclude_hosts={"192.168.1.121"})
+    assert len(hosts) == 252
+    assert "192.168.1.1" in hosts
+    assert "192.168.1.254" in hosts
+    assert "192.168.1.42" not in hosts
+    assert "192.168.1.121" not in hosts
+
+    # Loopback or invalid IPs produce no LAN scan targets
+    assert build_subnet_hosts("127.0.0.1") == []
+    assert build_subnet_hosts("invalid") == []
+
+
+async def test_discover_breezart_devices_identifies_modbus_and_native(serve) -> None:
+    """Discovery detects Modbus TCP, Native TCP (even with custom password), and ignores non-Breezart ports."""
+    mb_handler, _ = modbus_handler()
+    modbus_port = await serve(mb_handler)
+
+    async def native_wrong_pass_handler(reader, writer):
+        await reader.read(100)
+        writer.write(b"VEPas_")
+        await writer.drain()
+
+    native_port = await serve(native_wrong_pass_handler)
+
+    async def junk_http_handler(reader, writer):
+        await reader.read(100)
+        writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+        await writer.drain()
+
+    junk_port = await serve(junk_http_handler)
+
+    found = await async_discover_breezart_devices(
+        hosts=["127.0.0.1"],
+        candidates=(
+            (PROTOCOL_MODBUS_TCP, modbus_port),
+            (PROTOCOL_NATIVE_TCP, native_port),
+            (PROTOCOL_NATIVE_TCP, junk_port),
+        ),
+    )
+
+    assert found == [
+        DiscoveredBreezartDevice(
+            host="127.0.0.1",
+            port=modbus_port,
+            protocol=PROTOCOL_MODBUS_TCP,
+            firmware_ver="JL204c7",
+            requires_password=False,
+        ),
+        DiscoveredBreezartDevice(
+            host="127.0.0.1",
+            port=native_port,
+            protocol=PROTOCOL_NATIVE_TCP,
+            firmware_ver=None,
+            requires_password=True,
+        ),
+    ]

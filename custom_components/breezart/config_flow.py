@@ -11,12 +11,14 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
 
 from .const import (
+    CONF_DISCOVERED_DEVICE,
     CONF_MODEL,
     CONF_NOTIFY_SERVICE,
     CONF_PROTOCOL,
@@ -38,6 +40,7 @@ from .const import (
     DEFAULT_SPEED_MAX,
     DEFAULT_TEMP_MAX,
     DEFAULT_TEMP_MIN,
+    DISCOVERY_MANUAL,
     DOMAIN,
     ERR_CANNOT_CONNECT,
     ERR_INVALID_AUTH,
@@ -54,7 +57,11 @@ from .const import (
     STEP_USER,
     get_model_preset,
 )
-from .coordinator import async_detect_and_connect_client
+from .coordinator import (
+    DiscoveredBreezartDevice,
+    async_detect_and_connect_client,
+    async_discover_breezart_devices,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +82,7 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._speed_max: int = DEFAULT_SPEED_MAX
         self._temp_min: int = DEFAULT_TEMP_MIN
         self._temp_max: int = DEFAULT_TEMP_MAX
+        self._discovered: list[DiscoveredBreezartDevice] | None = None
 
     @staticmethod
     @callback
@@ -84,18 +92,67 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Create the options flow for switching model preset, protocol, fan speeds, and temperature bounds."""
         return BreezartOptionsFlowHandler()
 
+    def _configured_hosts(self) -> set[str]:
+        """Return set of IP/host strings already configured for this domain."""
+        return {
+            str(entry.data.get(CONF_HOST)).strip()
+            for entry in self._async_current_entries()
+            if entry.data.get(CONF_HOST)
+        }
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step."""
+        """Handle the initial step with automatic LAN discovery of Breezart controllers."""
         errors: dict[str, str] = {}
 
+        if self._discovered is None and user_input is None:
+            self._discovered = await async_discover_breezart_devices(
+                exclude_hosts=self._configured_hosts()
+            )
+            if self._discovered and self._host is None:
+                first = self._discovered[0]
+                self._host = first.host
+                self._port = first.port
+                self._protocol = first.protocol
+
         if user_input is not None:
-            self._host = str(user_input[CONF_HOST]).strip()
-            self._port = int(user_input[CONF_PORT])
+            by_key = {dev.key: dev for dev in (self._discovered or [])}
+            chosen_key = str(user_input.get(CONF_DISCOVERED_DEVICE, "")).strip()
+            submitted_host = str(user_input.get(CONF_HOST, "")).strip()
+
+            if chosen_key in by_key and chosen_key != DISCOVERY_MANUAL:
+                chosen = by_key[chosen_key]
+                # Use the selected discovered unit unless the user kept the default dropdown
+                # item while typing a different custom IP address into CONF_HOST.
+                if chosen.host != self._host or submitted_host in ("", self._host):
+                    self._host = chosen.host
+                    self._port = chosen.port
+                    self._protocol = chosen.protocol
+                else:
+                    self._host = submitted_host
+                    self._port = int(user_input[CONF_PORT])
+                    self._protocol = str(user_input.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
+            elif submitted_host.lower() in ("", "auto"):
+                found = await async_discover_breezart_devices(
+                    exclude_hosts=self._configured_hosts()
+                )
+                self._discovered = found
+                if found:
+                    self._host = found[0].host
+                    self._port = found[0].port
+                    self._protocol = found[0].protocol
+                else:
+                    self._host = DEFAULT_HOST
+                    self._port = int(user_input.get(CONF_PORT, DEFAULT_MODBUS_PORT))
+                    self._protocol = str(user_input.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
+            else:
+                self._host = submitted_host
+                self._port = int(user_input[CONF_PORT])
+                self._protocol = str(user_input.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
+
             self._password = str(user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)).strip() or DEFAULT_PASSWORD
             self._model = str(user_input.get(CONF_MODEL, DEFAULT_MODEL))
-            self._protocol = str(user_input.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
             self._slave_id = int(user_input.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
             self._speed_max = max(
                 MIN_ALLOWED_SPEED_MAX,
@@ -189,27 +246,52 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         )
 
+        schema_fields: dict[Any, Any] = {}
+        if self._discovered:
+            current_key = f"{self._host}:{self._port}"
+            known_keys = {dev.key for dev in self._discovered}
+            default_disc_key = (
+                current_key if current_key in known_keys else self._discovered[0].key
+            )
+            discovered_options = [
+                SelectOptionDict(value=dev.key, label=dev.format_label())
+                for dev in self._discovered
+            ]
+            discovered_options.append(
+                SelectOptionDict(value=DISCOVERY_MANUAL, label="Manual IP / Вручную")
+            )
+            schema_fields[
+                vol.Optional(CONF_DISCOVERED_DEVICE, default=default_disc_key)
+            ] = SelectSelector(
+                SelectSelectorConfig(
+                    options=discovered_options,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        schema_fields.update(
+            {
+                vol.Required(CONF_MODEL, default=self._model): model_selector,
+                vol.Required(CONF_PROTOCOL, default=self._protocol): protocol_selector,
+                vol.Required(CONF_HOST, default=self._host or DEFAULT_HOST): str,
+                vol.Required(CONF_PORT, default=self._port): int,
+                vol.Optional(CONF_SLAVE_ID, default=self._slave_id): int,
+                vol.Optional(CONF_PASSWORD, default=self._password): str,
+                vol.Required(
+                    CONF_SPEED_MAX, default=self._speed_max
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_SPEED_MAX, max=MAX_ALLOWED_SPEED_MAX)),
+                vol.Required(
+                    CONF_TEMP_MIN, default=self._temp_min
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND, max=MAX_ALLOWED_TEMP_BOUND - 1)),
+                vol.Required(
+                    CONF_TEMP_MAX, default=self._temp_max
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND)),
+            }
+        )
+
         return self.async_show_form(
             step_id=STEP_USER,
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_MODEL, default=self._model): model_selector,
-                    vol.Required(CONF_PROTOCOL, default=self._protocol): protocol_selector,
-                    vol.Required(CONF_HOST, default=self._host or DEFAULT_HOST): str,
-                    vol.Required(CONF_PORT, default=self._port): int,
-                    vol.Optional(CONF_SLAVE_ID, default=self._slave_id): int,
-                    vol.Optional(CONF_PASSWORD, default=self._password): str,
-                    vol.Required(
-                        CONF_SPEED_MAX, default=self._speed_max
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_SPEED_MAX, max=MAX_ALLOWED_SPEED_MAX)),
-                    vol.Required(
-                        CONF_TEMP_MIN, default=self._temp_min
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND, max=MAX_ALLOWED_TEMP_BOUND - 1)),
-                    vol.Required(
-                        CONF_TEMP_MAX, default=self._temp_max
-                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND)),
-                }
-            ),
+            data_schema=vol.Schema(schema_fields),
             errors=errors,
         )
 

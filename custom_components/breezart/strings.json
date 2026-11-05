@@ -5,6 +5,7 @@
         "title": "Breezart Ventilation",
         "description": "Configure connection and model preset for your Breezart controller (supports Modbus TCP on port 502 for JLV135/JL204c7 and Native TCP on port 1560 for TPD-283U-H)",
         "data": {
+          "discovered_device": "Discovered Breezart Unit on LAN",
           "model": "Unit Model Preset",
           "protocol": "Connection Protocol",
           "host": "Host (IP address)",
