@@ -42,6 +42,7 @@ from .const import (
     KEY_HUMIDITY_OUTDOOR,
     KEY_HUMIDITY_ROOM,
     KEY_HUMIDITY_SUPPLY,
+    KEY_HUMIDITY_TARGET,
     KEY_MODE,
     KEY_MODE_SET,
     KEY_MSG,
@@ -367,6 +368,14 @@ async def async_setup_entry(
             SensorDeviceClass.HUMIDITY,
             PERCENTAGE,
             enabled_default=_is_enabled(KEY_HUMIDITY),
+        ),
+        BreezartSensor(
+            coordinator,
+            KEY_HUMIDITY_TARGET,
+            SensorDeviceClass.HUMIDITY,
+            PERCENTAGE,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            enabled_default=_is_enabled(KEY_HUMIDITY_TARGET),
         ),
         # --- Enum State Sensors ---
         BreezartTextSensor(

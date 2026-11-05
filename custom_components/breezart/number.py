@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -11,12 +11,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DATA_COORDINATOR,
+    DEFAULT_HUMID_MAX,
+    DEFAULT_HUMID_MIN,
+    DEFAULT_HUMID_STEP,
     DEFAULT_SPEED_STEP,
     DEFAULT_TEMP_STEP,
     DOMAIN,
+    KEY_HUMIDITY_TARGET,
     KEY_SPEED_TARGET,
     KEY_TEMPERATURE_TARGET,
     TRANSLATION_KEY_FAN_SPEED,
+    TRANSLATION_KEY_TARGET_HUMIDITY,
     TRANSLATION_KEY_TARGET_TEMP,
 )
 from .coordinator import BreezartDataCoordinator
@@ -57,6 +62,51 @@ class BreezartTargetTemperature(CoordinatorEntity[BreezartDataCoordinator], Numb
         """Set target temperature via protocol."""
         await self.coordinator.async_command(
             self.coordinator.client.set_temperature(int(value))
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return self.coordinator.device_info
+
+
+class BreezartTargetHumidity(CoordinatorEntity[BreezartDataCoordinator], NumberEntity):
+    """Target relative humidity control for Breezart."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = TRANSLATION_KEY_TARGET_HUMIDITY
+    _attr_device_class = NumberDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_step = DEFAULT_HUMID_STEP
+
+    def __init__(self, coordinator: BreezartDataCoordinator) -> None:
+        """Initialize."""
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{DOMAIN}_{coordinator.client.host}_{TRANSLATION_KEY_TARGET_HUMIDITY}"
+        )
+
+    @property
+    def native_min_value(self) -> float:
+        """Return minimum target humidity (%) from client/controller."""
+        return float(getattr(self.coordinator.client, "humid_min", DEFAULT_HUMID_MIN))
+
+    @property
+    def native_max_value(self) -> float:
+        """Return maximum target humidity (%) from client/controller."""
+        return float(getattr(self.coordinator.client, "humid_max", DEFAULT_HUMID_MAX))
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current target relative humidity (%)."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get(KEY_HUMIDITY_TARGET)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set target relative humidity via protocol."""
+        await self.coordinator.async_command(
+            self.coordinator.client.set_humidity(int(round(value)))
         )
 
     @property
@@ -119,6 +169,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             BreezartTargetTemperature(coordinator),
+            BreezartTargetHumidity(coordinator),
             BreezartFanSpeed(coordinator),
         ]
     )

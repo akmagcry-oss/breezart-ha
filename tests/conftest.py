@@ -33,6 +33,7 @@ class FakeClient:
         self.protocol_type = protocol_type
         self.host = HOST
         self.temp_min, self.temp_max = 5, 35
+        self.humid_min, self.humid_max = 30, 85
         self.speed_min, self.speed_max = 1, 10
         self.has_cooler = False
         self.has_humidifier = False
@@ -47,6 +48,7 @@ class FakeClient:
             "temperature": 21.0,
             "temperature_target": 22.0,
             "humidity": None,
+            "humidity_target": 45.0,
             "speed": 3,
             "speed_target": 3,
             "speed_fact": 30,
@@ -68,6 +70,7 @@ class FakeClient:
         self.sensors: dict[str, Any] = {"temp_supply": 20.5, "temp_room": 22.5}
         self.set_power = AsyncMock()
         self.set_temperature = AsyncMock()
+        self.set_humidity = AsyncMock()
         self.set_fan_speed = AsyncMock()
         self.set_mode = AsyncMock()
 

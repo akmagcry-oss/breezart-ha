@@ -44,6 +44,8 @@ async def async_get_config_entry_diagnostics(
             "capabilities": {
                 "temp_min": client.temp_min,
                 "temp_max": client.temp_max,
+                "humid_min": getattr(client, "humid_min", None),
+                "humid_max": getattr(client, "humid_max", None),
                 "speed_min": client.speed_min,
                 "speed_max": client.speed_max,
                 "has_heater": getattr(client, "has_heater", None),

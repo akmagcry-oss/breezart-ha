@@ -9,6 +9,7 @@ from custom_components.breezart.const import (
     TRANSLATION_KEY_CLIMATE,
     TRANSLATION_KEY_FAN_SPEED,
     TRANSLATION_KEY_POWER_SWITCH,
+    TRANSLATION_KEY_TARGET_HUMIDITY,
 )
 
 from .conftest import entity_id_for
@@ -21,9 +22,11 @@ TARGET_TEMP_UID = "target_temp"
 COMMANDS = [
     ("number", TARGET_TEMP_UID, "set_value", {"value": 24}, "set_temperature", (24,)),
     ("number", TRANSLATION_KEY_FAN_SPEED, "set_value", {"value": 5}, "set_fan_speed", (5,)),
+    ("number", TRANSLATION_KEY_TARGET_HUMIDITY, "set_value", {"value": 55}, "set_humidity", (55,)),
     ("switch", TRANSLATION_KEY_POWER_SWITCH, "turn_off", {}, "set_power", (False,)),
     ("switch", TRANSLATION_KEY_POWER_SWITCH, "turn_on", {}, "set_power", (True,)),
     ("climate", TRANSLATION_KEY_CLIMATE, "set_temperature", {"temperature": 23}, "set_temperature", (23,)),
+    ("climate", TRANSLATION_KEY_CLIMATE, "set_humidity", {"humidity": 50}, "set_humidity", (50,)),
     ("climate", TRANSLATION_KEY_CLIMATE, "set_fan_mode", {"fan_mode": "4"}, "set_fan_speed", (4,)),
     ("climate", TRANSLATION_KEY_CLIMATE, "turn_off", {}, "set_power", (False,)),
 ]
@@ -308,3 +311,30 @@ async def test_schedule_and_scenario_entities(
     assert scen_state.attributes[ATTR_CONTROLLER_TIME] == "08:15"
     assert ATTR_ACTIVATION_SOURCE in scen_state.attributes
     assert hass.states.get(bin_entity_id).state == "on"
+
+
+async def test_target_humidity_entities_and_optimistic_rollback(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """Climate, number, and diagnostic sensor expose target humidity and roll back on error."""
+    from custom_components.breezart.const import KEY_HUMIDITY_TARGET
+
+    climate_id = entity_id_for(hass, "climate", TRANSLATION_KEY_CLIMATE)
+    num_id = entity_id_for(hass, "number", TRANSLATION_KEY_TARGET_HUMIDITY)
+    sensor_id = entity_id_for(hass, "sensor", KEY_HUMIDITY_TARGET)
+
+    assert hass.states.get(num_id).state == "45.0"
+    assert hass.states.get(sensor_id).state == "45.0"
+    assert hass.states.get(climate_id).attributes["humidity"] == 45.0
+
+    fake_client.set_humidity.side_effect = ConnectionError("down")
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            "climate",
+            "set_humidity",
+            {"entity_id": climate_id, "humidity": 60},
+            blocking=True,
+        )
+
+    assert hass.states.get(climate_id).attributes["humidity"] == 45.0
+

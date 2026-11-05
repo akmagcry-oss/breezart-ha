@@ -113,6 +113,9 @@
       "target_temperature": {
         "name": "Target temperature"
       },
+      "target_humidity": {
+        "name": "Target humidity"
+      },
       "fan_speed": {
         "name": "Fan speed"
       }
@@ -179,6 +182,9 @@
       },
       "humidity": {
         "name": "Humidity"
+      },
+      "humidity_target": {
+        "name": "Target humidity"
       },
       "unit_state": {
         "name": "Unit state",

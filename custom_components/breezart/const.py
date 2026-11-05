@@ -81,6 +81,7 @@ REQ_GET_STATE: Final[str] = "VSt07"
 REQ_GET_SENSORS: Final[str] = "VSens"
 REQ_SET_POWER: Final[str] = "VWPwr"
 REQ_SET_TEMP: Final[str] = "VWTmp"
+REQ_SET_HUMIDITY: Final[str] = "VWHum"
 REQ_SET_FAN_SPEED: Final[str] = "VWSpd"
 REQ_SET_MODE: Final[str] = "VWFtr"
 
@@ -117,6 +118,7 @@ NO_DATA_BYTE: Final[int] = 255
 # Packet field indices and bit positions for VPr07 (Device Properties)
 VPR07_IDX_TEMPR: Final[int] = 1
 VPR07_IDX_SPEED: Final[int] = 2
+VPR07_IDX_HUMID: Final[int] = 3
 VPR07_IDX_MISC: Final[int] = 4
 VPR07_IDX_PROT: Final[int] = 5
 VPR07_IDX_FW: Final[int] = 7
@@ -190,6 +192,7 @@ KEY_MODE_SET: Final[str] = "mode_set"
 KEY_TEMPERATURE: Final[str] = "temperature"
 KEY_TEMPERATURE_TARGET: Final[str] = "temperature_target"
 KEY_HUMIDITY: Final[str] = "humidity"
+KEY_HUMIDITY_TARGET: Final[str] = "humidity_target"
 KEY_SPEED: Final[str] = "speed"
 KEY_SPEED_TARGET: Final[str] = "speed_target"
 KEY_SPEED_FACT: Final[str] = "speed_fact"
@@ -237,6 +240,7 @@ KEY_CONTROLLER_TIME: Final[str] = "controller_time"
 TRANSLATION_KEY_CLIMATE: Final[str] = "climate"
 TRANSLATION_KEY_POWER_SWITCH: Final[str] = "power"
 TRANSLATION_KEY_TARGET_TEMP: Final[str] = "target_temperature"
+TRANSLATION_KEY_TARGET_HUMIDITY: Final[str] = "target_humidity"
 TRANSLATION_KEY_FAN_SPEED: Final[str] = "fan_speed"
 
 # Notification settings & event keys (v1.2.0 / v1.2.1)
@@ -293,9 +297,12 @@ REPAIR_ISSUE_KEYS: Final[tuple[str, ...]] = (
 UNIT_PPM: Final[str] = "ppm"
 UNIT_PPB: Final[str] = "ppb"
 DEFAULT_TEMP_STEP: Final[float] = 1.0
+DEFAULT_HUMID_STEP: Final[float] = 1.0
 DEFAULT_SPEED_STEP: Final[float] = 1.0
 DEFAULT_TEMP_MIN: Final[int] = 5
 DEFAULT_TEMP_MAX: Final[int] = 35
+DEFAULT_HUMID_MIN: Final[int] = 30
+DEFAULT_HUMID_MAX: Final[int] = 85
 DEFAULT_SPEED_MIN: Final[int] = 1
 DEFAULT_SPEED_MAX: Final[int] = 10
 MIN_ALLOWED_TEMP_BOUND: Final[int] = 5
@@ -627,6 +634,7 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "enabled_sensors": (
             *BASE_ENABLED_SENSORS,
             KEY_HUMIDITY,
+            KEY_HUMIDITY_TARGET,
             KEY_TEMP_WATER,
             KEY_TEMP_OUTDOOR,
         ),
@@ -685,6 +693,7 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "enabled_sensors": (
             *BASE_ENABLED_SENSORS,
             KEY_HUMIDITY,
+            KEY_HUMIDITY_TARGET,
             KEY_TEMP_WATER,
             KEY_TEMP_OUTDOOR,
             KEY_TEMP_ROOM,
@@ -706,6 +715,7 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "enabled_sensors": (
             *BASE_ENABLED_SENSORS,
             KEY_HUMIDITY,
+            KEY_HUMIDITY_TARGET,
             KEY_POWER_CONSUMPTION,
             KEY_TEMP_OUTDOOR,
             KEY_TEMP_ROOM,
@@ -728,6 +738,7 @@ MODEL_PRESETS: Final[dict[str, dict[str, Any]]] = {
         "enabled_sensors": (
             *BASE_ENABLED_SENSORS,
             KEY_HUMIDITY,
+            KEY_HUMIDITY_TARGET,
         ),
     },
 }
@@ -749,6 +760,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             TRANSLATION_KEY_CLIMATE: "Климат",
             TRANSLATION_KEY_POWER_SWITCH: "Питание",
             TRANSLATION_KEY_TARGET_TEMP: "Заданная температура",
+            TRANSLATION_KEY_TARGET_HUMIDITY: "Заданная влажность",
             TRANSLATION_KEY_FAN_SPEED: "Скорость вентилятора",
             KEY_TEMPERATURE: "Температура (точка регулирования)",
             KEY_TEMP_SUPPLY: "Температура подачи (выход установки)",
@@ -763,6 +775,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_ENERGY_CONSUMPTION: "Потреблённая энергия",
             KEY_FILTER_DUST: "Загрязнённость фильтра",
             KEY_HUMIDITY: "Влажность",
+            KEY_HUMIDITY_TARGET: "Заданная влажность",
             KEY_UNIT_STATE: "Состояние установки",
             KEY_MODE: "Режим работы",
             KEY_MODE_SET: "Заданный режим",
@@ -870,6 +883,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             TRANSLATION_KEY_CLIMATE: "Climate",
             TRANSLATION_KEY_POWER_SWITCH: "Power",
             TRANSLATION_KEY_TARGET_TEMP: "Target temperature",
+            TRANSLATION_KEY_TARGET_HUMIDITY: "Target humidity",
             TRANSLATION_KEY_FAN_SPEED: "Fan speed",
             KEY_TEMPERATURE: "Temperature (control point)",
             KEY_TEMP_SUPPLY: "Supply air temperature",
@@ -884,6 +898,7 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_ENERGY_CONSUMPTION: "Energy consumption",
             KEY_FILTER_DUST: "Filter pollution",
             KEY_HUMIDITY: "Humidity",
+            KEY_HUMIDITY_TARGET: "Target humidity",
             KEY_UNIT_STATE: "Unit state",
             KEY_MODE: "Operating mode",
             KEY_MODE_SET: "Requested mode",

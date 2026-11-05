@@ -416,3 +416,55 @@ async def test_discover_breezart_devices_identifies_modbus_and_native(serve) -> 
             requires_password=True,
         ),
     ]
+
+
+async def test_target_humidity_protocol_commands_and_decoding(serve) -> None:
+    """Native TCP VWHum/VPr07/VSt07 and Modbus HOLDING[2] read and write target humidity."""
+    from custom_components.breezart.const import KEY_HUMIDITY, KEY_HUMIDITY_TARGET
+
+    received_native: list[str] = []
+
+    async def native_handler(reader, writer):
+        while req := await reader.read(100):
+            text = req.decode().strip()
+            received_native.append(text)
+            if text.startswith("VPr07"):
+                # VPr07: temp 5..35, speed 1..10, humid 30..85 ((85<<8)|30 = 0x551e), misc humidifier bit 13 (0x2000)
+                writer.write(b"VPr07_2305_a01_551e_2000_107_0_64")
+            elif text.startswith("VSt07"):
+                # VSt07: humid low=42%, target high=55% ((55<<8)|42 = 0x372a)
+                writer.write(b"VSt07_41_1_1615_372a_33_80_e23_0_0_OK")
+            elif text.startswith("VWHum"):
+                writer.write(b"OK")
+            await writer.drain()
+
+    nat_client = BreezartTCPClient("127.0.0.1", await serve(native_handler), timeout=1)
+    await nat_client.connect()
+    await nat_client.get_properties()
+    assert nat_client.has_humidifier is True
+    assert (nat_client.humid_min, nat_client.humid_max) == (30, 85)
+    nat_state = await nat_client.get_state()
+    assert nat_state[KEY_HUMIDITY] == 42
+    assert nat_state[KEY_HUMIDITY_TARGET] == 55.0
+    await nat_client.set_humidity(60)
+    await nat_client.disconnect()
+    assert any(cmd.startswith("VWHum_") and cmd.endswith("_3c") for cmd in received_native)
+
+    modbus_writes: list[tuple[int, int]] = []
+
+    async def mb_write_handler(reader, writer):
+        while hdr := await reader.read(260):
+            tx_id, proto_id, length, unit_id, fc = struct.unpack(">HHHBB", hdr[:8])
+            if fc == 0x06:
+                reg, val = struct.unpack(">HH", hdr[8:12])
+                modbus_writes.append((reg, val))
+                writer.write(hdr[:12])
+                await writer.drain()
+
+    mb_client = BreezartModbusClient("127.0.0.1", await serve(mb_write_handler), timeout=1)
+    await mb_client.connect()
+    await mb_client.set_humidity(55)
+    await mb_client.disconnect()
+    assert modbus_writes == [(2, 550)]
+
+

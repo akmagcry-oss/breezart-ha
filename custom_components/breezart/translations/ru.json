@@ -113,6 +113,9 @@
       "target_temperature": {
         "name": "Заданная температура"
       },
+      "target_humidity": {
+        "name": "Заданная влажность"
+      },
       "fan_speed": {
         "name": "Скорость вентилятора"
       }
@@ -179,6 +182,9 @@
       },
       "humidity": {
         "name": "Влажность"
+      },
+      "humidity_target": {
+        "name": "Заданная влажность"
       },
       "unit_state": {
         "name": "Состояние установки",

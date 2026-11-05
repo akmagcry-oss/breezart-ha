@@ -24,8 +24,14 @@ from .const import (
     CMD_MODE_HEAT,
     CMD_MODE_VENT,
     DATA_COORDINATOR,
+    DEFAULT_HUMID_MAX,
+    DEFAULT_HUMID_MIN,
     DEFAULT_TEMP_STEP,
     DOMAIN,
+    KEY_HUMIDITY,
+    KEY_HUMIDITY_ROOM,
+    KEY_HUMIDITY_SUPPLY,
+    KEY_HUMIDITY_TARGET,
     KEY_MODE,
     KEY_POWER,
     KEY_SPEED_TARGET,
@@ -46,6 +52,13 @@ from .coordinator import BreezartDataCoordinator, command_error
 
 _LOGGER = logging.getLogger(__name__)
 
+_BASE_CLIMATE_FEATURES = (
+    ClimateEntityFeature.TARGET_TEMPERATURE
+    | ClimateEntityFeature.FAN_MODE
+    | ClimateEntityFeature.TURN_ON
+    | ClimateEntityFeature.TURN_OFF
+)
+
 
 class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity):
     """Breezart climate entity (thermostat)."""
@@ -53,12 +66,6 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
     _attr_has_entity_name = True
     _attr_translation_key = TRANSLATION_KEY_CLIMATE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.FAN_MODE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
 
     def __init__(self, coordinator: BreezartDataCoordinator) -> None:
         """Initialize the climate entity with model preset and configured ranges."""
@@ -72,9 +79,20 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         self._attr_hvac_modes = hvac_modes
 
         self._optimistic_target_temp: float | None = None
+        self._optimistic_target_humidity: float | None = None
         self._optimistic_fan_mode: str | None = None
         self._optimistic_hvac_mode: HVACMode | None = None
         self._optimistic_set_time: float = 0.0
+
+    @property
+    def supported_features(self) -> ClimateEntityFeature:
+        """Return supported climate features, enabling target humidity when supported."""
+        if (
+            getattr(self.coordinator.client, "has_humidifier", False)
+            or self.target_humidity is not None
+        ):
+            return _BASE_CLIMATE_FEATURES | ClimateEntityFeature.TARGET_HUMIDITY
+        return _BASE_CLIMATE_FEATURES
 
     @property
     def min_temp(self) -> float:
@@ -87,6 +105,16 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         return float(self.coordinator.client.temp_max)
 
     @property
+    def min_humidity(self) -> float:
+        """Return minimum target relative humidity (%) from client/controller."""
+        return float(getattr(self.coordinator.client, "humid_min", DEFAULT_HUMID_MIN))
+
+    @property
+    def max_humidity(self) -> float:
+        """Return maximum target relative humidity (%) from client/controller."""
+        return float(getattr(self.coordinator.client, "humid_max", DEFAULT_HUMID_MAX))
+
+    @property
     def fan_modes(self) -> list[str]:
         """Return available fan speed steps (e.g. 1..10)."""
         speed_min = int(self.coordinator.client.speed_min)
@@ -97,6 +125,7 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         """Clear optimistic state only after hold period expires."""
         if time.monotonic() - self._optimistic_set_time > OPTIMISTIC_HOLD_SECONDS:
             self._optimistic_target_temp = None
+            self._optimistic_target_humidity = None
             self._optimistic_fan_mode = None
             self._optimistic_hvac_mode = None
         super()._handle_coordinator_update()
@@ -119,6 +148,26 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get(KEY_TEMPERATURE_TARGET)
+
+    @property
+    def current_humidity(self) -> float | None:
+        """Return the current relative humidity (prefer regulation point, then room/supply)."""
+        if not self.coordinator.data:
+            return None
+        for key in (KEY_HUMIDITY, KEY_HUMIDITY_ROOM, KEY_HUMIDITY_SUPPLY):
+            val = self.coordinator.data.get(key)
+            if val is not None:
+                return val
+        return None
+
+    @property
+    def target_humidity(self) -> float | None:
+        """Return the target relative humidity (%)."""
+        if self._optimistic_target_humidity is not None:
+            return self._optimistic_target_humidity
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get(KEY_HUMIDITY_TARGET)
 
     @property
     def hvac_mode(self) -> HVACMode:
@@ -187,6 +236,21 @@ class BreezartClimate(CoordinatorEntity[BreezartDataCoordinator], ClimateEntity)
             _LOGGER.debug("Set temperature to %d°C", int(temperature))
         except Exception as err:
             self._optimistic_target_temp = None
+            self.async_write_ha_state()
+            raise command_error(err) from err
+        await self.coordinator.async_request_refresh()
+
+    async def async_set_humidity(self, humidity: int) -> None:
+        """Set new target relative humidity (%)."""
+        target = int(round(humidity))
+        self._optimistic_target_humidity = float(target)
+        self._optimistic_set_time = time.monotonic()
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.client.set_humidity(target)
+            _LOGGER.debug("Set humidity to %d%%", target)
+        except Exception as err:
+            self._optimistic_target_humidity = None
             self.async_write_ha_state()
             raise command_error(err) from err
         await self.coordinator.async_request_refresh()

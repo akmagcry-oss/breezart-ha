@@ -61,6 +61,8 @@ from .const import (
     COLOR_MSG_NORMAL,
     COLOR_MSG_WARNING,
     DEFAULT_HOST,
+    DEFAULT_HUMID_MAX,
+    DEFAULT_HUMID_MIN,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NAME,
@@ -107,6 +109,7 @@ from .const import (
     KEY_HUMIDITY_OUTDOOR,
     KEY_HUMIDITY_ROOM,
     KEY_HUMIDITY_SUPPLY,
+    KEY_HUMIDITY_TARGET,
     KEY_IS_FATAL_ERR,
     KEY_IS_WARN_ERR,
     KEY_MODE,
@@ -229,6 +232,7 @@ from .const import (
     REQ_GET_SENSORS,
     REQ_GET_STATE,
     REQ_SET_FAN_SPEED,
+    REQ_SET_HUMIDITY,
     REQ_SET_MODE,
     REQ_SET_POWER,
     REQ_SET_TEMP,
@@ -253,6 +257,7 @@ from .const import (
     UNIT_STATE_SHUTDOWN,
     UNIT_STATE_STARTUP,
     VPR07_IDX_FW,
+    VPR07_IDX_HUMID,
     VPR07_IDX_MISC,
     VPR07_IDX_PROT,
     VPR07_IDX_SPEED,
@@ -514,6 +519,8 @@ class BreezartTCPClient:
         self.speed_max: int = (
             self._user_speed_max if self._user_speed_max is not None else int(preset["speed_max"])
         )
+        self.humid_min: int = DEFAULT_HUMID_MIN
+        self.humid_max: int = DEFAULT_HUMID_MAX
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
         self.firmware_ver: int | str | None = None
@@ -643,6 +650,12 @@ class BreezartTCPClient:
         hw_temp_max = _parse_bits(parts[VPR07_IDX_TEMPR], BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
         hw_speed_min = _parse_bits(parts[VPR07_IDX_SPEED], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
         hw_speed_max = _parse_bits(parts[VPR07_IDX_SPEED], BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
+        if len(parts) > VPR07_IDX_HUMID:
+            hw_humid_min = _parse_bits(parts[VPR07_IDX_HUMID], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
+            hw_humid_max = _parse_bits(parts[VPR07_IDX_HUMID], BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
+            if 0 <= hw_humid_min < hw_humid_max <= 100:
+                self.humid_min = hw_humid_min
+                self.humid_max = hw_humid_max
         hw_cooler = bool(_parse_bits(parts[VPR07_IDX_MISC], BIT_IS_COOLER))
         hw_humid = bool(_parse_bits(parts[VPR07_IDX_MISC], BIT_IS_HUMIDIFIER))
 
@@ -709,6 +722,12 @@ class BreezartTCPClient:
 
         humid_raw = _parse_bits(parts[VST07_IDX_HUMID], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
         humid = None if humid_raw == NO_DATA_BYTE else humid_raw
+        humid_target_raw = _parse_bits(parts[VST07_IDX_HUMID], BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
+        humid_target = (
+            None
+            if humid_target_raw == NO_DATA_BYTE or (humid_target_raw == 0 and not self.has_humidifier)
+            else float(humid_target_raw)
+        )
 
         speed = _parse_bits(parts[VST07_IDX_SPEED], BIT_SPEED_CUR_START, BIT_SPEED_CUR_END)
         speed_target = _parse_bits(parts[VST07_IDX_SPEED], BIT_SPEED_TGT_START, BIT_SPEED_TGT_END)
@@ -746,6 +765,7 @@ class BreezartTCPClient:
             KEY_TEMPERATURE: float(tempr),
             KEY_TEMPERATURE_TARGET: float(temper_target),
             KEY_HUMIDITY: humid,
+            KEY_HUMIDITY_TARGET: humid_target,
             KEY_SPEED: speed,
             KEY_SPEED_TARGET: speed_target,
             KEY_SPEED_FACT: speed_fact,
@@ -829,6 +849,14 @@ class BreezartTCPClient:
         if not parts or parts[0] != RESP_OK:
             raise ValueError(f"Unexpected set_temperature response: {parts}")
 
+    async def set_humidity(self, humidity: int) -> None:
+        """Set target relative humidity (VWHum). Must be integer percentage."""
+        clamped = max(self.humid_min, min(self.humid_max, int(round(humidity))))
+        req = self._build_request(REQ_SET_HUMIDITY, clamped)
+        parts = await self._send(req)
+        if not parts or parts[0] != RESP_OK:
+            raise ValueError(f"Unexpected set_humidity response: {parts}")
+
     async def set_fan_speed(self, speed: int) -> None:
         """Set fan speed (VWSpd)."""
         req = self._build_request(REQ_SET_FAN_SPEED, speed)
@@ -894,6 +922,8 @@ class BreezartModbusClient:
         self.speed_max: int = (
             self._user_speed_max if self._user_speed_max is not None else int(preset["speed_max"])
         )
+        self.humid_min: int = DEFAULT_HUMID_MIN
+        self.humid_max: int = DEFAULT_HUMID_MAX
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
         self.firmware_ver: int | str | None = None
@@ -1213,6 +1243,12 @@ class BreezartModbusClient:
         # Parse Holding[0..8] setpoints
         fan_task_raw = hr[MODBUS_HR_FAN_SPEED]  # % * 100 (0..10000)
         temp_target = round(_to_signed16(hr[MODBUS_HR_TEMP_TARGET]) / TEMP_DIVISOR, 1)
+        humid_target_raw = hr[MODBUS_HR_HUMID_TARGET]  # % * 10 (e.g. 450 = 45.0%)
+        humid_target: float | None = None
+        if humid_target_raw not in MODBUS_INVALID_VALUES:
+            raw_h = round(_to_signed16(humid_target_raw) / TEMP_DIVISOR, 1)
+            if 0.0 < raw_h <= 100.0 or (raw_h == 0.0 and self.has_humidifier):
+                humid_target = raw_h
         power_reg = hr[MODBUS_HR_POWER_STATE]  # 0=Off, 1=Working, 2=Standby
         mode_hc = hr[MODBUS_HR_MODE_HC]        # 0=Vent, 1=Heat, 2=Cool, 3=Auto
 
@@ -1333,6 +1369,7 @@ class BreezartModbusClient:
             KEY_TEMPERATURE: cur_t,
             KEY_TEMPERATURE_TARGET: temp_target,
             KEY_HUMIDITY: round(cur_h) if cur_h is not None else None,
+            KEY_HUMIDITY_TARGET: humid_target,
             KEY_SPEED: speed,
             KEY_SPEED_TARGET: speed_target if speed_target > 0 else self.speed_min,
             KEY_SPEED_FACT: speed_fact,
@@ -1433,6 +1470,12 @@ class BreezartModbusClient:
         """Set target temperature via Holding[1] (t_task, °C x 10)."""
         raw_deci = int(round(float(temperature) * TEMP_DIVISOR))
         await self._write_register(MODBUS_HR_TEMP_TARGET, raw_deci)
+
+    async def set_humidity(self, humidity: int | float) -> None:
+        """Set target relative humidity via Holding[2] (h_task, % x 10)."""
+        clamped = max(self.humid_min, min(self.humid_max, float(humidity)))
+        raw_deci = int(round(clamped * TEMP_DIVISOR))
+        await self._write_register(MODBUS_HR_HUMID_TARGET, raw_deci)
 
     async def set_fan_speed(self, speed: int) -> None:
         """Set fan speed step via Holding[0] (fan_task, % x 100)."""
