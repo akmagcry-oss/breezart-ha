@@ -15,6 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -76,6 +77,10 @@ from .const import (
     FREEZE_SUPPLY_TEMP_THRESHOLD,
     HEX_FORMAT_LOWER,
     HEX_ZERO,
+    ISSUE_CONTROLLER_ERROR,
+    ISSUE_FILTER,
+    ISSUE_FREEZE,
+    ISSUE_OVERHEAT,
     KEY_CHANGE_FILTER,
     KEY_CO2,
     KEY_COLOR_IND,
@@ -206,6 +211,7 @@ from .const import (
     PROTOCOL_NATIVE_TCP,
     READ_BUFFER_SIZE,
     READ_DELAY_SECONDS,
+    REPAIR_ISSUE_KEYS,
     REQ_GET_PROPERTIES,
     REQ_GET_SENSORS,
     REQ_GET_STATE,
@@ -1652,6 +1658,74 @@ def _resolve_notify_targets(
     return targets
 
 
+@dataclass(frozen=True, slots=True)
+class RepairIssueSpec:
+    """Immutable specification of an active Home Assistant Repairs issue."""
+
+    issue_key: str
+    severity: str
+    placeholders: dict[str, str]
+
+
+def evaluate_repair_issues(
+    data: dict[str, Any],
+    *,
+    device_name: str,
+    host: str,
+) -> dict[str, RepairIssueSpec]:
+    """Evaluate active Home Assistant Repairs issues from a coordinator data snapshot."""
+    active: dict[str, RepairIssueSpec] = {}
+    base_placeholders = {"device": device_name, "host": host}
+
+    cur_overheat = bool(data.get(KEY_DANGER_OVERHEAT, False))
+    if cur_overheat:
+        active[ISSUE_OVERHEAT] = RepairIssueSpec(
+            issue_key=ISSUE_OVERHEAT,
+            severity="critical",
+            placeholders=dict(base_placeholders),
+        )
+
+    cur_freeze = bool(data.get(KEY_DANGER_FREEZE, False))
+    if cur_freeze:
+        active[ISSUE_FREEZE] = RepairIssueSpec(
+            issue_key=ISSUE_FREEZE,
+            severity="critical",
+            placeholders=dict(base_placeholders),
+        )
+
+    filter_dust = data.get(KEY_FILTER_DUST)
+    cur_filter = bool(data.get(KEY_CHANGE_FILTER, False)) or (
+        isinstance(filter_dust, (int, float))
+        and filter_dust >= FILTER_POLLUTION_REPLACE_MAX
+    )
+    if cur_filter:
+        pollution_str = (
+            str(round(float(filter_dust)))
+            if isinstance(filter_dust, (int, float))
+            else f"{FILTER_POLLUTION_REPLACE_MAX}+"
+        )
+        active[ISSUE_FILTER] = RepairIssueSpec(
+            issue_key=ISSUE_FILTER,
+            severity="warning",
+            placeholders={**base_placeholders, "pollution": pollution_str},
+        )
+
+    is_fatal = bool(data.get(KEY_IS_FATAL_ERR, False))
+    is_warn = bool(data.get(KEY_IS_WARN_ERR, False))
+    if (is_fatal or is_warn) and not (cur_overheat or cur_freeze or cur_filter):
+        raw_msg = str(data.get(KEY_MSG) or "").strip()
+        msg_text = (
+            raw_msg if raw_msg and raw_msg.upper() != "OK" else "Controller alarm"
+        )
+        active[ISSUE_CONTROLLER_ERROR] = RepairIssueSpec(
+            issue_key=ISSUE_CONTROLLER_ERROR,
+            severity="error" if is_fatal else "warning",
+            placeholders={**base_placeholders, "message": msg_text},
+        )
+
+    return active
+
+
 class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that polls Breezart for state and sensor data and dispatches event notifications."""
 
@@ -1902,6 +1976,43 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._prev_power = cur_power
         self._has_initial_snapshot = True
 
+    def _issue_id(self, issue_key: str) -> str:
+        """Return unique Repairs issue_id for this unit and issue key."""
+        return f"{self.client.host}_{issue_key}"
+
+    def _sync_repair_issues(self, data: dict[str, Any]) -> None:
+        """Create or update active Home Assistant Repairs issues and delete resolved ones."""
+        active = evaluate_repair_issues(
+            data,
+            device_name=f"{DEFAULT_NAME} {self.model_name}",
+            host=self.client.host,
+        )
+        severity_map = {
+            "critical": ir.IssueSeverity.CRITICAL,
+            "error": ir.IssueSeverity.ERROR,
+            "warning": ir.IssueSeverity.WARNING,
+        }
+        for issue_key in REPAIR_ISSUE_KEYS:
+            issue_id = self._issue_id(issue_key)
+            spec = active.get(issue_key)
+            if spec is not None:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=severity_map.get(spec.severity, ir.IssueSeverity.WARNING),
+                    translation_key=spec.issue_key,
+                    translation_placeholders=spec.placeholders,
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def clear_repair_issues(self) -> None:
+        """Remove all Home Assistant Repairs issues associated with this unit."""
+        for issue_key in REPAIR_ISSUE_KEYS:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(issue_key))
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch latest data from Breezart with serialized polling and offline debounce."""
         async with self._update_lock:
@@ -1941,6 +2052,7 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data[KEY_PROTOCOL_VER] = self.client.protocol_ver
 
                 self._consecutive_failures = 0
+                self._sync_repair_issues(data)
                 await self._async_evaluate_notifications(data)
 
                 _LOGGER.debug(

@@ -139,5 +139,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id)
+        data[DATA_COORDINATOR].clear_repair_issues()
         await data[DATA_CLIENT].disconnect()
     return unload_ok

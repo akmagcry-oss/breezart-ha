@@ -265,6 +265,18 @@ NOTIFY_EVENT_POWER_ON: Final[str] = "power_on"
 NOTIFY_EVENT_POWER_OFF: Final[str] = "power_off"
 NOTIFY_EVENT_OTHER_ERRORS: Final[str] = "other_errors"
 
+# Home Assistant Repairs issue translation keys
+ISSUE_OVERHEAT: Final[str] = "overheat_hazard"
+ISSUE_FREEZE: Final[str] = "freeze_hazard"
+ISSUE_FILTER: Final[str] = "filter_replacement"
+ISSUE_CONTROLLER_ERROR: Final[str] = "controller_error"
+REPAIR_ISSUE_KEYS: Final[tuple[str, ...]] = (
+    ISSUE_OVERHEAT,
+    ISSUE_FREEZE,
+    ISSUE_FILTER,
+    ISSUE_CONTROLLER_ERROR,
+)
+
 # Measurement units & steps
 UNIT_PPM: Final[str] = "ppm"
 UNIT_PPB: Final[str] = "ppb"

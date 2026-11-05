@@ -326,5 +326,23 @@
     "command_failed": {
       "message": "Failed to send the command to Breezart: {error}"
     }
+  },
+  "issues": {
+    "overheat_hazard": {
+      "title": "Heater overheat hazard ({device})",
+      "description": "Controller on {device} ({host}) reported an overheat hazard! Check supply fan operation and ensure the air filter is not clogged."
+    },
+    "freeze_hazard": {
+      "title": "Freeze hazard detected ({device})",
+      "description": "Controller on {device} ({host}) detected a freeze hazard! Supply air or heat carrier temperature is critically low."
+    },
+    "filter_replacement": {
+      "title": "Air filter replacement required ({device})",
+      "description": "The air filter on {device} ({host}) has reached {pollution}% pollution. Replace or clean the filter element and reset the filter counter on the wall panel."
+    },
+    "controller_error": {
+      "title": "Controller alarm or error ({device})",
+      "description": "Controller on {device} ({host}) reported an active error or warning: {message}."
+    }
   }
 }

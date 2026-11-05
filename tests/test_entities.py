@@ -71,3 +71,107 @@ async def test_climate_failure_reverts_optimistic_state(
         )
 
     assert hass.states.get(entity_id).attributes["temperature"] == 22.0
+
+
+def test_evaluate_repair_issues_pure_logic() -> None:
+    """Pure repair issue evaluation maps unit flags and filter pollution to RepairIssueSpec."""
+    from custom_components.breezart.const import (
+        ISSUE_CONTROLLER_ERROR,
+        ISSUE_FILTER,
+        ISSUE_FREEZE,
+        ISSUE_OVERHEAT,
+        KEY_CHANGE_FILTER,
+        KEY_DANGER_FREEZE,
+        KEY_DANGER_OVERHEAT,
+        KEY_FILTER_DUST,
+        KEY_IS_FATAL_ERR,
+        KEY_MSG,
+    )
+    from custom_components.breezart.coordinator import evaluate_repair_issues
+
+    # Healthy state -> no repair issues
+    assert (
+        evaluate_repair_issues(
+            {KEY_FILTER_DUST: 20, KEY_DANGER_OVERHEAT: False},
+            device_name="Breezart 550 Lux",
+            host="192.168.1.121",
+        )
+        == {}
+    )
+
+    # Filter pollution >= 85% and overheat hazard -> 2 active issues
+    issues = evaluate_repair_issues(
+        {
+            KEY_FILTER_DUST: 92,
+            KEY_CHANGE_FILTER: True,
+            KEY_DANGER_OVERHEAT: True,
+            KEY_DANGER_FREEZE: True,
+        },
+        device_name="Breezart 550 Lux",
+        host="192.168.1.121",
+    )
+    assert set(issues.keys()) == {ISSUE_FILTER, ISSUE_OVERHEAT, ISSUE_FREEZE}
+    assert issues[ISSUE_FILTER].severity == "warning"
+    assert issues[ISSUE_FILTER].placeholders["pollution"] == "92"
+    assert issues[ISSUE_OVERHEAT].severity == "critical"
+    assert issues[ISSUE_FREEZE].severity == "critical"
+
+    # Generic fatal controller error when specific hazards are off
+    err_issues = evaluate_repair_issues(
+        {
+            KEY_IS_FATAL_ERR: True,
+            KEY_MSG: "Sensor fault E04",
+        },
+        device_name="Breezart 550 Lux",
+        host="192.168.1.121",
+    )
+    assert set(err_issues.keys()) == {ISSUE_CONTROLLER_ERROR}
+    assert err_issues[ISSUE_CONTROLLER_ERROR].severity == "error"
+    assert err_issues[ISSUE_CONTROLLER_ERROR].placeholders["message"] == "Sensor fault E04"
+
+
+async def test_repairs_issues_created_and_cleared_on_poll(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """Coordinator creates Repairs issues when alarms occur and deletes them when resolved."""
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.breezart.const import (
+        DATA_COORDINATOR,
+        DOMAIN,
+        ISSUE_FILTER,
+        ISSUE_OVERHEAT,
+        KEY_CHANGE_FILTER,
+        KEY_DANGER_OVERHEAT,
+        KEY_FILTER_DUST,
+    )
+    from .conftest import HOST
+
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    registry = ir.async_get(hass)
+
+    assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_FILTER}") is None
+    assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_OVERHEAT}") is None
+
+    # Trigger filter replacement and overheat alarm
+    fake_client.state[KEY_CHANGE_FILTER] = True
+    fake_client.state[KEY_FILTER_DUST] = 90
+    fake_client.state[KEY_DANGER_OVERHEAT] = True
+    await coordinator.async_refresh()
+
+    filter_issue = registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_FILTER}")
+    overheat_issue = registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_OVERHEAT}")
+    assert filter_issue is not None
+    assert filter_issue.severity == ir.IssueSeverity.WARNING
+    assert overheat_issue is not None
+    assert overheat_issue.severity == ir.IssueSeverity.CRITICAL
+
+    # Clear alarms -> issues are automatically removed from Repairs panel
+    fake_client.state[KEY_CHANGE_FILTER] = False
+    fake_client.state[KEY_FILTER_DUST] = 10
+    fake_client.state[KEY_DANGER_OVERHEAT] = False
+    await coordinator.async_refresh()
+
+    assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_FILTER}") is None
+    assert registry.async_get_issue(DOMAIN, f"{HOST}_{ISSUE_OVERHEAT}") is None
