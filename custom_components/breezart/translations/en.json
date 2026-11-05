@@ -135,6 +135,9 @@
       },
       "power": {
         "name": "Unit running"
+      },
+      "schedule_active": {
+        "name": "Timer / schedule active"
       }
     },
     "sensor": {
@@ -207,6 +210,44 @@
           "auto": "Auto",
           "fan_only": "Ventilation",
           "unknown": "Unknown"
+        }
+      },
+      "active_scenario": {
+        "name": "Active scenario / schedule",
+        "state": {
+          "off": "No active scenario",
+          "scenario_1": "Scenario 1",
+          "scenario_2": "Scenario 2",
+          "scenario_3": "Scenario 3",
+          "scenario_4": "Scenario 4",
+          "scenario_5": "Scenario 5",
+          "scenario_6": "Scenario 6",
+          "scenario_7": "Scenario 7",
+          "scenario_8": "Scenario 8",
+          "standby": "Standby by timer",
+          "unknown": "Unknown"
+        },
+        "state_attributes": {
+          "scenario_number": {
+            "name": "Scenario number"
+          },
+          "schedule_enabled": {
+            "name": "Schedule enabled"
+          },
+          "activation_source": {
+            "name": "Activation source",
+            "state": {
+              "off": "Inactive",
+              "timer_1": "Timer 1 (schedule)",
+              "timer_2": "Timer 2 (schedule)",
+              "manual": "Manual from panel",
+              "external": "External signal",
+              "unknown": "Unknown"
+            }
+          },
+          "controller_time": {
+            "name": "Controller clock"
+          }
         }
       },
       "color_ind": {

@@ -134,6 +134,7 @@ VST07_IDX_TEMPR: Final[int] = 3
 VST07_IDX_HUMID: Final[int] = 4
 VST07_IDX_SPEED: Final[int] = 5
 VST07_IDX_MISC: Final[int] = 6
+VST07_IDX_TIME: Final[int] = 7
 VST07_IDX_MSG: Final[int] = 10
 
 BIT_PWR_BTN: Final[int] = 0
@@ -147,8 +148,13 @@ BIT_MODE_SET_END: Final[int] = 8
 
 BIT_UNIT_STATE_START: Final[int] = 0
 BIT_UNIT_STATE_END: Final[int] = 1
+BIT_SCEN_ALLOW: Final[int] = 2
 BIT_MODE_START: Final[int] = 3
 BIT_MODE_END: Final[int] = 5
+BIT_NUM_ACTIVE_SCEN_START: Final[int] = 6
+BIT_NUM_ACTIVE_SCEN_END: Final[int] = 9
+BIT_WHO_ACTIVATE_SCEN_START: Final[int] = 10
+BIT_WHO_ACTIVATE_SCEN_END: Final[int] = 12
 
 BIT_SPEED_CUR_START: Final[int] = 0
 BIT_SPEED_CUR_END: Final[int] = 3
@@ -221,6 +227,11 @@ KEY_HAS_COOLER: Final[str] = "has_cooler"
 KEY_HAS_HUMIDIFIER: Final[str] = "has_humidifier"
 KEY_FIRMWARE_VER: Final[str] = "firmware_ver"
 KEY_PROTOCOL_VER: Final[str] = "protocol_ver"
+KEY_ACTIVE_SCENARIO: Final[str] = "active_scenario"
+KEY_SCHEDULE_ENABLED: Final[str] = "schedule_enabled"
+KEY_SCHEDULE_ACTIVE: Final[str] = "schedule_active"
+KEY_SCENARIO_SOURCE: Final[str] = "scenario_source"
+KEY_CONTROLLER_TIME: Final[str] = "controller_time"
 
 # Entity unique_id & translation keys
 TRANSLATION_KEY_CLIMATE: Final[str] = "climate"
@@ -390,6 +401,36 @@ FILTER_STATUS_GOOD: Final[str] = "good"
 FILTER_STATUS_REPLACE_SOON: Final[str] = "replace_soon"
 FILTER_STATUS_CLOGGED: Final[str] = "clogged"
 
+# Schedule / Scenario & Timer codes and attributes
+SCENARIO_OFF: Final[int] = 0
+SCENARIO_STANDBY: Final[int] = 9
+SCENARIO_KEY_STANDBY: Final[str] = "standby"
+SCENARIO_MAP: Final[dict[int, str]] = {
+    SCENARIO_OFF: STATE_KEY_OFF,
+    1: "scenario_1",
+    2: "scenario_2",
+    3: "scenario_3",
+    4: "scenario_4",
+    5: "scenario_5",
+    6: "scenario_6",
+    7: "scenario_7",
+    8: "scenario_8",
+    SCENARIO_STANDBY: SCENARIO_KEY_STANDBY,
+}
+
+WHO_ACTIVATE_SCEN_MAP: Final[dict[int, str]] = {
+    0: STATE_KEY_OFF,
+    1: "timer_1",
+    2: "timer_2",
+    3: "manual",
+    4: "external",
+}
+
+ATTR_SCENARIO_NUMBER: Final[str] = "scenario_number"
+ATTR_SCHEDULE_ENABLED: Final[str] = "schedule_enabled"
+ATTR_ACTIVATION_SOURCE: Final[str] = "activation_source"
+ATTR_CONTROLLER_TIME: Final[str] = "controller_time"
+
 # Modbus TCP (MBAP + PDU) constants for JLV135 / JL204c7 (v1.7.x)
 MODBUS_PROTOCOL_ID: Final[int] = 0
 MODBUS_MBAP_HEADER_LEN: Final[int] = 7
@@ -417,6 +458,7 @@ MODBUS_HR_TEMP_TARGET: Final[int] = 1      # t_task (°C x 10, SINT16)
 MODBUS_HR_HUMID_TARGET: Final[int] = 2     # h_task (% x 10, SINT16)
 MODBUS_HR_POWER_STATE: Final[int] = 3      # on_off (0=Off, 1=Working, 2=Standby)
 MODBUS_HR_MODE_HC: Final[int] = 7          # mode_hc (0=Vent/Summer, 1=Heat/Winter, 2=Cool/Summer, 3=Auto)
+MODBUS_HR_SCENARIO: Final[int] = 8         # scen_num / active schedule preset (0=Off, 1..8=Scenario)
 MODBUS_HR_BLOCK_START: Final[int] = 0
 MODBUS_HR_BLOCK_COUNT: Final[int] = 9      # Reads HOLDING[0..8] in one request
 
@@ -471,6 +513,7 @@ MODBUS_STATUS_BIT_WINTER: Final[int] = 2
 MODBUS_STATUS_BIT_WARN: Final[int] = 3
 MODBUS_STATUS_BIT_FATAL: Final[int] = 4
 MODBUS_STATUS_BIT_VENT: Final[int] = 5
+MODBUS_STATUS_BIT_SCENARIO: Final[int] = 6
 MODBUS_STATUS_BIT_HEATING: Final[int] = 7
 MODBUS_STATUS_BIT_COOLING: Final[int] = 8
 MODBUS_STATUS_BIT_OVERHEAT_BLOW: Final[int] = 15
@@ -528,6 +571,7 @@ BASE_ENABLED_SENSORS: Final[tuple[str, ...]] = (
     KEY_FIRMWARE_VER,
     KEY_PROTOCOL_VER,
     KEY_ENERGY_CONSUMPTION,
+    KEY_ACTIVE_SCENARIO,
 )
 
 # Model configuration presets for Breezart lineup
@@ -742,6 +786,8 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_DANGER_FREEZE: "Угроза обморожения",
             KEY_CHANGE_FILTER: "Требуется замена фильтра",
             KEY_POWER: "Установка включена",
+            KEY_ACTIVE_SCENARIO: "Активный сценарий (расписание)",
+            KEY_SCHEDULE_ACTIVE: "Работа по расписанию / таймеру",
             KEY_NOTIFY_OVERHEAT: "Уведомление: Угроза перегрева",
             KEY_NOTIFY_FREEZE: "Уведомление: Угроза обморожения",
             KEY_NOTIFY_FILTER: "Уведомление: Замена фильтра",
@@ -795,6 +841,13 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             FILTER_STATUS_GOOD: "Хорошее",
             FILTER_STATUS_REPLACE_SOON: "Требуется замена",
             FILTER_STATUS_CLOGGED: "Забит",
+        },
+        "scenario_source": {
+            STATE_KEY_OFF: "Выключен",
+            "timer_1": "Таймер 1 (Расписание)",
+            "timer_2": "Таймер 2 (Расписание)",
+            "manual": "Вручную с пульта",
+            "external": "Внешний сигнал",
         },
         "models": {
             MODEL_400_LUX: "Breezart 400 Lux (Электрический, до 400 м³/ч)",
@@ -854,6 +907,8 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_DANGER_FREEZE: "Freeze hazard",
             KEY_CHANGE_FILTER: "Filter replacement required",
             KEY_POWER: "Unit running",
+            KEY_ACTIVE_SCENARIO: "Active scenario (schedule)",
+            KEY_SCHEDULE_ACTIVE: "Schedule / timer active",
             KEY_NOTIFY_OVERHEAT: "Notification: Overheat hazard",
             KEY_NOTIFY_FREEZE: "Notification: Freeze hazard",
             KEY_NOTIFY_FILTER: "Notification: Filter replacement",
@@ -907,6 +962,13 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             FILTER_STATUS_GOOD: "Good",
             FILTER_STATUS_REPLACE_SOON: "Replace soon",
             FILTER_STATUS_CLOGGED: "Clogged",
+        },
+        "scenario_source": {
+            STATE_KEY_OFF: "Off",
+            "timer_1": "Timer 1 (Schedule)",
+            "timer_2": "Timer 2 (Schedule)",
+            "manual": "Manual (Wall panel)",
+            "external": "External signal",
         },
         "models": {
             MODEL_400_LUX: "Breezart 400 Lux (Electric, up to 400 m³/h)",

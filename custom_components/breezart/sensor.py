@@ -16,15 +16,21 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ATTR_ACTIVATION_SOURCE,
+    ATTR_CONTROLLER_TIME,
     ATTR_FILTER_STATUS,
     ATTR_FILTER_STATUS_KEY,
+    ATTR_SCENARIO_NUMBER,
+    ATTR_SCHEDULE_ENABLED,
     COLOR_IND_MAP,
     COLOR_MSG_MAP,
     DATA_COORDINATOR,
     DOMAIN,
+    KEY_ACTIVE_SCENARIO,
     KEY_CO2,
     KEY_COLOR_IND,
     KEY_COLOR_MSG,
+    KEY_CONTROLLER_TIME,
     KEY_ENERGY_CONSUMPTION,
     KEY_FILTER1_POLLUTION,
     KEY_FILTER2_POLLUTION,
@@ -41,6 +47,8 @@ from .const import (
     KEY_MSG,
     KEY_POWER_CONSUMPTION,
     KEY_PROTOCOL_VER,
+    KEY_SCENARIO_SOURCE,
+    KEY_SCHEDULE_ENABLED,
     KEY_SPEED,
     KEY_SPEED_FACT,
     KEY_SPEED_TARGET,
@@ -54,6 +62,9 @@ from .const import (
     KEY_VOC,
     MODE_MAP,
     MODE_SET_MAP,
+    SCENARIO_MAP,
+    SCENARIO_OFF,
+    SCENARIO_STANDBY,
     STATE_KEY_UNKNOWN,
     UNIT_PPB,
     UNIT_PPM,
@@ -215,6 +226,41 @@ class BreezartEnergySensor(BreezartSensor, RestoreEntity):
                 pass
 
 
+class BreezartScenarioSensor(BreezartTextSensor):
+    """Enum sensor for the active wall-panel schedule/scenario and timer state."""
+
+    def __init__(
+        self,
+        coordinator: BreezartDataCoordinator,
+        enabled_default: bool = True,
+    ) -> None:
+        """Initialize the active scenario sensor."""
+        super().__init__(
+            coordinator,
+            key=KEY_ACTIVE_SCENARIO,
+            value_map=SCENARIO_MAP,
+            enabled_default=enabled_default,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int | bool | str | None] | None:
+        """Return schedule/timer attributes (scenario number, schedule enabled, source, clock)."""
+        if not self.coordinator.data:
+            return None
+
+        raw_scen = self.coordinator.data.get(KEY_ACTIVE_SCENARIO, SCENARIO_OFF)
+        scen_num = int(raw_scen) if isinstance(raw_scen, int) and raw_scen != SCENARIO_STANDBY else 0
+        attrs: dict[str, int | bool | str | None] = {
+            ATTR_SCENARIO_NUMBER: scen_num,
+            ATTR_SCHEDULE_ENABLED: bool(self.coordinator.data.get(KEY_SCHEDULE_ENABLED, False)),
+            ATTR_ACTIVATION_SOURCE: str(self.coordinator.data.get(KEY_SCENARIO_SOURCE, "off")),
+        }
+        controller_time = self.coordinator.data.get(KEY_CONTROLLER_TIME)
+        if controller_time is not None:
+            attrs[ATTR_CONTROLLER_TIME] = str(controller_time)
+        return attrs
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -342,6 +388,10 @@ async def async_setup_entry(
             MODE_SET_MAP,
             entity_category=EntityCategory.DIAGNOSTIC,
             enabled_default=_is_enabled(KEY_MODE_SET),
+        ),
+        BreezartScenarioSensor(
+            coordinator,
+            enabled_default=_is_enabled(KEY_ACTIVE_SCENARIO),
         ),
         BreezartTextSensor(
             coordinator,

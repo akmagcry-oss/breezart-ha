@@ -39,7 +39,10 @@ from .const import (
     BIT_MODE_SET_END,
     BIT_MODE_SET_START,
     BIT_MODE_START,
+    BIT_NUM_ACTIVE_SCEN_END,
+    BIT_NUM_ACTIVE_SCEN_START,
     BIT_PWR_BTN,
+    BIT_SCEN_ALLOW,
     BIT_SPEED_CUR_END,
     BIT_SPEED_CUR_START,
     BIT_SPEED_TGT_END,
@@ -47,6 +50,8 @@ from .const import (
     BIT_UNIT_STATE_END,
     BIT_UNIT_STATE_START,
     BIT_WARN_ERR,
+    BIT_WHO_ACTIVATE_SCEN_END,
+    BIT_WHO_ACTIVATE_SCEN_START,
     CMD_MODE_HEAT,
     CMD_MODE_TO_MODBUS_HC,
     COLOR_IND_OFF,
@@ -81,10 +86,12 @@ from .const import (
     ISSUE_FILTER,
     ISSUE_FREEZE,
     ISSUE_OVERHEAT,
+    KEY_ACTIVE_SCENARIO,
     KEY_CHANGE_FILTER,
     KEY_CO2,
     KEY_COLOR_IND,
     KEY_COLOR_MSG,
+    KEY_CONTROLLER_TIME,
     KEY_DANGER_FREEZE,
     KEY_DANGER_OVERHEAT,
     KEY_ENERGY_CONSUMPTION,
@@ -115,6 +122,9 @@ from .const import (
     KEY_POWER,
     KEY_POWER_CONSUMPTION,
     KEY_PROTOCOL_VER,
+    KEY_SCENARIO_SOURCE,
+    KEY_SCHEDULE_ACTIVE,
+    KEY_SCHEDULE_ENABLED,
     KEY_SPEED,
     KEY_SPEED_FACT,
     KEY_SPEED_MAX,
@@ -152,6 +162,7 @@ from .const import (
     MODBUS_HR_HUMID_TARGET,
     MODBUS_HR_MODE_HC,
     MODBUS_HR_POWER_STATE,
+    MODBUS_HR_SCENARIO,
     MODBUS_HR_TEMP_TARGET,
     MODBUS_INVALID_VALUES,
     MODBUS_IR_FAN_BLOCK_COUNT,
@@ -177,6 +188,7 @@ from .const import (
     MODBUS_STATUS_BIT_HEATING,
     MODBUS_STATUS_BIT_OVERHEAT_BLOW,
     MODBUS_STATUS_BIT_POWER,
+    MODBUS_STATUS_BIT_SCENARIO,
     MODBUS_STATUS_BIT_TRANSITION,
     MODBUS_STATUS_BIT_WARN,
     MODBUS_STATUS_BIT_WINTER,
@@ -224,12 +236,16 @@ from .const import (
     RESP_PROPERTIES,
     RESP_SENSORS,
     RESP_STATE,
+    SCENARIO_OFF,
+    SCENARIO_STANDBY,
     SENSORS_UPDATE_INTERVAL,
     SERVICE_CREATE,
     SIGN_BIT_MASK,
     SIGN_BIT_OFFSET,
     SIGNED_BYTE_OFFSET,
     SIGNED_BYTE_THRESHOLD,
+    STATE_KEY_OFF,
+    STATE_KEY_UNKNOWN,
     STATE_UPDATE_INTERVAL,
     TEMP_DIVISOR,
     UNIT_STATE_OFF,
@@ -262,6 +278,8 @@ from .const import (
     VST07_IDX_SPEED,
     VST07_IDX_STATE,
     VST07_IDX_TEMPR,
+    VST07_IDX_TIME,
+    WHO_ACTIVATE_SCEN_MAP,
     get_model_preset,
     translate_value,
 )
@@ -361,6 +379,88 @@ def _detect_freeze_hazard(
     ):
         return True
     return False
+
+
+@dataclass(frozen=True)
+class ScheduleTimerState:
+    """Decoded schedule/scenario and controller timer state."""
+
+    active_scenario: int
+    schedule_enabled: bool
+    schedule_active: bool
+    activation_source: str
+    controller_time: str | None
+
+
+def decode_native_schedule_state(
+    mode_hex: str,
+    time_hex: str | None = None,
+) -> ScheduleTimerState:
+    """Decode schedule/scenario and clock fields from Native TCP VSt07 BitMode and Time words."""
+    schedule_enabled = bool(_parse_bits(mode_hex, BIT_SCEN_ALLOW))
+    raw_scen = _parse_bits(mode_hex, BIT_NUM_ACTIVE_SCEN_START, BIT_NUM_ACTIVE_SCEN_END)
+    active_scenario = raw_scen if 1 <= raw_scen <= 8 else SCENARIO_OFF
+    who_code = _parse_bits(mode_hex, BIT_WHO_ACTIVATE_SCEN_START, BIT_WHO_ACTIVATE_SCEN_END)
+    activation_source = WHO_ACTIVATE_SCEN_MAP.get(who_code, STATE_KEY_UNKNOWN)
+    schedule_active = active_scenario > 0 or who_code > 0
+
+    controller_time: str | None = None
+    if time_hex:
+        try:
+            minutes = _parse_bits(time_hex, BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
+            hours = _parse_bits(time_hex, BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
+            if 0 <= hours <= 23 and 0 <= minutes <= 59 and (hours > 0 or minutes > 0):
+                controller_time = f"{hours:02d}:{minutes:02d}"
+        except ValueError:
+            controller_time = None
+
+    return ScheduleTimerState(
+        active_scenario=active_scenario,
+        schedule_enabled=schedule_enabled,
+        schedule_active=schedule_active,
+        activation_source=activation_source,
+        controller_time=controller_time,
+    )
+
+
+def decode_modbus_schedule_state(
+    *,
+    power_reg: int,
+    cur_mode_reg: int,
+    status_low: int,
+    status_high: int = 0,
+    hr_scen_reg: int = 0,
+) -> ScheduleTimerState:
+    """Decode schedule/scenario and timer standby state from Modbus TCP registers."""
+    status_scen_bit = bool(status_low & (1 << MODBUS_STATUS_BIT_SCENARIO))
+    is_standby = power_reg == 2 or cur_mode_reg == 2
+
+    scen_num = hr_scen_reg if 1 <= hr_scen_reg <= 8 else (status_high & 0xFF)
+    if not (1 <= scen_num <= 8):
+        scen_num = SCENARIO_OFF
+
+    if is_standby and scen_num == SCENARIO_OFF:
+        active_scenario = SCENARIO_STANDBY
+    else:
+        active_scenario = scen_num
+
+    schedule_active = is_standby or status_scen_bit or (1 <= scen_num <= 8)
+    schedule_enabled = schedule_active
+    if is_standby or status_scen_bit:
+        activation_source = "timer_1"
+    elif 1 <= scen_num <= 8:
+        activation_source = "manual"
+    else:
+        activation_source = "off"
+
+    return ScheduleTimerState(
+        active_scenario=active_scenario,
+        schedule_enabled=schedule_enabled,
+        schedule_active=schedule_active,
+        activation_source=activation_source,
+        controller_time=None,
+    )
+
 
 
 class ModbusExceptionError(ValueError):
@@ -625,6 +725,8 @@ class BreezartTCPClient:
         filter_dust = None if filter_dust_raw == NO_DATA_BYTE else filter_dust_raw
 
         msg = parts[VST07_IDX_MSG] if len(parts) > VST07_IDX_MSG else None
+        time_part = parts[VST07_IDX_TIME] if len(parts) > VST07_IDX_TIME else None
+        sched = decode_native_schedule_state(parts[VST07_IDX_MODE], time_part)
         power = bool(pwr_btn_state)
         danger_freeze = _detect_freeze_hazard(
             hw_freeze_flag=bit_danger_freeze,
@@ -656,6 +758,11 @@ class BreezartTCPClient:
             KEY_COLOR_MSG: color_msg,
             KEY_COLOR_IND: color_ind,
             KEY_MSG: msg,
+            KEY_ACTIVE_SCENARIO: sched.active_scenario,
+            KEY_SCHEDULE_ENABLED: sched.schedule_enabled,
+            KEY_SCHEDULE_ACTIVE: sched.schedule_active,
+            KEY_SCENARIO_SOURCE: sched.activation_source,
+            KEY_CONTROLLER_TIME: sched.controller_time,
         }
 
     async def get_sensors(self) -> dict[str, Any]:
@@ -1208,6 +1315,16 @@ class BreezartModbusClient:
             color_msg = COLOR_MSG_NORMAL
             msg = "OK"
 
+        hr_scen_reg = hr[MODBUS_HR_SCENARIO] if len(hr) > MODBUS_HR_SCENARIO else 0
+        status_high = ir[2] if len(ir) > 2 else 0
+        sched = decode_modbus_schedule_state(
+            power_reg=power_reg,
+            cur_mode_reg=cur_mode_reg,
+            status_low=status_low,
+            status_high=status_high,
+            hr_scen_reg=hr_scen_reg,
+        )
+
         return {
             KEY_POWER: power,
             KEY_UNIT_STATE: unit_state,
@@ -1232,6 +1349,11 @@ class BreezartModbusClient:
             KEY_COLOR_MSG: color_msg,
             KEY_COLOR_IND: color_ind,
             KEY_MSG: msg,
+            KEY_ACTIVE_SCENARIO: sched.active_scenario,
+            KEY_SCHEDULE_ENABLED: sched.schedule_enabled,
+            KEY_SCHEDULE_ACTIVE: sched.schedule_active,
+            KEY_SCENARIO_SOURCE: sched.activation_source,
+            KEY_CONTROLLER_TIME: sched.controller_time,
         }
 
     async def get_sensors(self) -> dict[str, Any]:

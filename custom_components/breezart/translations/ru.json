@@ -135,6 +135,9 @@
       },
       "power": {
         "name": "Установка включена"
+      },
+      "schedule_active": {
+        "name": "Работа по таймеру / расписанию"
       }
     },
     "sensor": {
@@ -207,6 +210,44 @@
           "auto": "Авто",
           "fan_only": "Вентиляция",
           "unknown": "Неизвестно"
+        }
+      },
+      "active_scenario": {
+        "name": "Активный сценарий / расписание",
+        "state": {
+          "off": "Без сценария",
+          "scenario_1": "Сценарий 1",
+          "scenario_2": "Сценарий 2",
+          "scenario_3": "Сценарий 3",
+          "scenario_4": "Сценарий 4",
+          "scenario_5": "Сценарий 5",
+          "scenario_6": "Сценарий 6",
+          "scenario_7": "Сценарий 7",
+          "scenario_8": "Сценарий 8",
+          "standby": "Отключено по таймеру (Standby)",
+          "unknown": "Неизвестно"
+        },
+        "state_attributes": {
+          "scenario_number": {
+            "name": "Номер сценария"
+          },
+          "schedule_enabled": {
+            "name": "Расписание разрешено"
+          },
+          "activation_source": {
+            "name": "Источник активации",
+            "state": {
+              "off": "Не активен",
+              "timer_1": "Таймер 1 (по расписанию)",
+              "timer_2": "Таймер 2 (по расписанию)",
+              "manual": "Вручную с пульта",
+              "external": "Внешний сигнал",
+              "unknown": "Неизвестно"
+            }
+          },
+          "controller_time": {
+            "name": "Время пульта"
+          }
         }
       },
       "color_ind": {

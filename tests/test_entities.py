@@ -222,3 +222,89 @@ async def test_energy_consumption_sensor_accumulates_kwh(
 
     updated = hass.states.get(entity_id)
     assert float(updated.state) == pytest.approx(1.53, rel=1e-2)
+
+
+def test_decode_schedule_and_timer_pure_logic() -> None:
+    """Pure decoders extract active scenario, timer/schedule flags, source, and HH:MM time."""
+    from custom_components.breezart.const import SCENARIO_STANDBY
+    from custom_components.breezart.coordinator import (
+        decode_modbus_schedule_state,
+        decode_native_schedule_state,
+    )
+
+    # Native VSt07: bit 2 (ScenAllow=1) | bits 6..9 (scen=3 -> 3<<6) | bits 10..12 (Timer1=1 -> 1<<10)
+    bit_mode = (1 << 2) | (3 << 6) | (1 << 10)
+    # Time field: hours=14 (high byte), minutes=35 (low byte) -> (14 << 8) | 35
+    time_word = (14 << 8) | 35
+    nat = decode_native_schedule_state(format(bit_mode, "x"), format(time_word, "x"))
+    assert nat.active_scenario == 3
+    assert nat.schedule_enabled is True
+    assert nat.activation_source == "timer_1"
+    assert nat.controller_time == "14:35"
+
+    # Native VSt07: manual mode, no scenario
+    nat_off = decode_native_schedule_state("1", None)
+    assert nat_off.active_scenario == 0
+    assert nat_off.schedule_enabled is False
+    assert nat_off.activation_source == "off"
+    assert nat_off.controller_time is None
+
+    # Modbus JL204c7: scenario 2 active by schedule bit (bit 6 of status_low)
+    mb_scen = decode_modbus_schedule_state(
+        power_reg=1, cur_mode_reg=1, status_low=(1 << 6), status_high=0, hr_scen_reg=2
+    )
+    assert mb_scen.active_scenario == 2
+    assert mb_scen.schedule_enabled is True
+    assert mb_scen.activation_source == "timer_1"
+
+    # Modbus JL204c7: standby by timer (power_reg=2 / cur_mode_reg=2)
+    mb_standby = decode_modbus_schedule_state(
+        power_reg=2, cur_mode_reg=2, status_low=0, status_high=0, hr_scen_reg=0
+    )
+    assert mb_standby.active_scenario == SCENARIO_STANDBY
+    assert mb_standby.schedule_enabled is True
+    assert mb_standby.activation_source == "timer_1"
+
+
+async def test_schedule_and_scenario_entities(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """Active scenario sensor and schedule_active binary sensor reflect panel schedule/timer state."""
+    from custom_components.breezart.const import (
+        ATTR_ACTIVATION_SOURCE,
+        ATTR_CONTROLLER_TIME,
+        ATTR_SCENARIO_NUMBER,
+        ATTR_SCHEDULE_ENABLED,
+        DATA_COORDINATOR,
+        DOMAIN,
+        KEY_ACTIVE_SCENARIO,
+        KEY_CONTROLLER_TIME,
+        KEY_SCENARIO_SOURCE,
+        KEY_SCHEDULE_ACTIVE,
+        KEY_SCHEDULE_ENABLED,
+    )
+
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+    scen_entity_id = entity_id_for(hass, "sensor", KEY_ACTIVE_SCENARIO)
+    bin_entity_id = entity_id_for(hass, "binary_sensor", KEY_SCHEDULE_ACTIVE)
+
+    assert hass.states.get(scen_entity_id).state == "off"
+    assert hass.states.get(bin_entity_id).state == "off"
+
+    # Simulate Scenario 4 activated by Timer 1 at 08:15 on the wall panel
+    fake_client.state[KEY_ACTIVE_SCENARIO] = 4
+    fake_client.state[KEY_SCHEDULE_ENABLED] = True
+    fake_client.state[KEY_SCHEDULE_ACTIVE] = True
+    fake_client.state[KEY_SCENARIO_SOURCE] = "timer_1"
+    fake_client.state[KEY_CONTROLLER_TIME] = "08:15"
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    scen_state = hass.states.get(scen_entity_id)
+    assert scen_state.state == "scenario_4"
+    assert scen_state.attributes[ATTR_SCENARIO_NUMBER] == 4
+    assert scen_state.attributes[ATTR_SCHEDULE_ENABLED] is True
+    assert scen_state.attributes[ATTR_CONTROLLER_TIME] == "08:15"
+    assert ATTR_ACTIVATION_SOURCE in scen_state.attributes
+    assert hass.states.get(bin_entity_id).state == "on"

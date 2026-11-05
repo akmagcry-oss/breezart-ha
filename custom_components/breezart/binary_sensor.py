@@ -21,6 +21,7 @@ from .const import (
     KEY_IS_FATAL_ERR,
     KEY_IS_WARN_ERR,
     KEY_POWER,
+    KEY_SCHEDULE_ACTIVE,
 )
 from .coordinator import BreezartDataCoordinator
 
@@ -104,6 +105,12 @@ async def async_setup_entry(
                 coordinator,
                 KEY_POWER,
                 BinarySensorDeviceClass.RUNNING,
+            ),
+            BreezartBinarySensor(
+                coordinator,
+                KEY_SCHEDULE_ACTIVE,
+                None,
+                EntityCategory.DIAGNOSTIC,
             ),
         ]
     )

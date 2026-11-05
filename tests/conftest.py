@@ -59,6 +59,11 @@ class FakeClient:
             "color_msg": 0,
             "color_ind": 1,
             "msg": "OK",
+            "active_scenario": 0,
+            "schedule_enabled": False,
+            "schedule_active": False,
+            "scenario_source": "off",
+            "controller_time": None,
         }
         self.sensors: dict[str, Any] = {"temp_supply": 20.5, "temp_room": 22.5}
         self.set_power = AsyncMock()
