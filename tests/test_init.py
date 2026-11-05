@@ -182,4 +182,7 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     assert "## [1.3.0]" in changelog
     assert changelog.index("## [1.3.0]") < changelog.index("## [1.2.4]")
 
-
+    # 5. Repository root must contain LICENSE file for HACS <Validation license>
+    license_path = root / "LICENSE"
+    assert license_path.is_file(), "LICENSE must exist in repository root for HACS validation"
+    assert "MIT License" in license_path.read_text(encoding="utf-8")

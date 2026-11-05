@@ -39,9 +39,13 @@ async def serve():
     """Start a TCP server on localhost running the given handler; return its port."""
     servers: list[asyncio.Server] = []
     writers: list[asyncio.StreamWriter] = []
+    tasks: list[asyncio.Task[None]] = []
 
     async def _serve(handler: Handler) -> int:
         async def tracked(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            task = asyncio.current_task()
+            if task is not None:
+                tasks.append(task)
             writers.append(writer)
             await handler(reader, writer)
 
@@ -50,13 +54,19 @@ async def serve():
         return server.sockets[0].getsockname()[1]
 
     yield _serve
-    # Close server-side sockets ourselves: wait_closed() blocks until every client
-    # connection ends, which would hang teardown when a test fails mid-connection.
+    # Close server-side sockets and cancel any sleeping handler tasks so
+    # pytest-homeassistant-custom-component's verify_cleanup sees no lingering tasks.
     for writer in writers:
         writer.close()
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
     for server in servers:
         server.close()
         await asyncio.wait_for(server.wait_closed(), timeout=5)
+
 
 
 def _hex16(value: int) -> str:
