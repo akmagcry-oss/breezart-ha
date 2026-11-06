@@ -10,6 +10,9 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
   - Added `set_vav_zone_speed(zone, speed)` on both `BreezartTCPClient` (`VWZSp_<pass>_<((speed<<8)|zone)_hex>`) and `BreezartModbusClient` (`HOLDING[100 + zone - 1] = % × 100`).
   - Added dynamic per-zone number entities `BreezartVavZoneSpeed` (`number.breezart_vav_zone_1`..`number.breezart_vav_zone_20`, range `0..speed_max`) created automatically when VAV zoning is detected or configured (`vav_zones` in `OptionsFlow`).
   - Added diagnostic binary sensor `BreezartVavBinarySensor` (`binary_sensor.breezart_vav_mode`) with `has_vav`, `vav_zones`, and `zone_speeds` attributes.
+- **Calculated Airflow (`m³/h`) & Heater Thermal Power / Efficiency Sensors (`custom_components/breezart/coordinator.py`, `custom_components/breezart/sensor.py`, `custom_components/breezart/const.py`, `tests/test_entities.py`)**:
+  - Added pure function `calculate_airflow_and_thermal_metrics()` and `ThermalAirflowMetrics` to compute real-time volumetric airflow (`m³/h`), sensible heater thermal power ($P_{\text{thermal}} = 0.336 \cdot L \cdot \max(0, T_{\text{supply}} - T_{\text{outdoor}})$ in `W`), and heater efficiency (`%`, electrical-to-thermal ratio $P_{\text{thermal}} / P_{\text{electric}}$ when power consumption is available, or temperature-lift efficiency $(T_{\text{supply}} - T_{\text{outdoor}}) / (T_{\text{target}} - T_{\text{outdoor}})$ for water heaters).
+  - Added `BreezartAirflowSensor` (`sensor.breezart_airflow`, `m³/h`, attribute `nominal_airflow_m3h`), `BreezartHeaterPowerSensor` (`sensor.breezart_heater_thermal_power`, `SensorDeviceClass.POWER`, `W`, attribute `temp_delta_c`), and `sensor.breezart_heater_efficiency` (`%`).
 
 ## [1.3.0]
 

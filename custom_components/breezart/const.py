@@ -223,6 +223,10 @@ KEY_HUMIDITY_OUTDOOR: Final[str] = "humidity_outdoor"
 KEY_TEMP_WATER: Final[str] = "temp_water"
 KEY_POWER_CONSUMPTION: Final[str] = "power_consumption"
 KEY_ENERGY_CONSUMPTION: Final[str] = "energy_consumption"
+KEY_AIRFLOW: Final[str] = "airflow"
+KEY_HEATER_THERMAL_POWER: Final[str] = "heater_thermal_power"
+KEY_HEATER_EFFICIENCY: Final[str] = "heater_efficiency"
+KEY_TEMP_DELTA: Final[str] = "temp_delta"
 KEY_CO2: Final[str] = "co2"
 KEY_VOC: Final[str] = "voc"
 KEY_FILTER1_POLLUTION: Final[str] = "filter1_pollution"
@@ -250,6 +254,8 @@ KEY_CONTROLLER_TIME: Final[str] = "controller_time"
 ATTR_HAS_VAV: Final[str] = "has_vav"
 ATTR_VAV_ZONES: Final[str] = "vav_zones"
 ATTR_ZONE_SPEEDS: Final[str] = "zone_speeds"
+ATTR_NOMINAL_AIRFLOW: Final[str] = "nominal_airflow_m3h"
+ATTR_TEMP_DELTA: Final[str] = "temp_delta_c"
 
 
 def vav_zone_key(zone: int) -> str:
@@ -316,6 +322,9 @@ REPAIR_ISSUE_KEYS: Final[tuple[str, ...]] = (
 # Measurement units & steps
 UNIT_PPM: Final[str] = "ppm"
 UNIT_PPB: Final[str] = "ppb"
+UNIT_M3H: Final[str] = "m³/h"
+AIR_HEAT_CAPACITY_FACTOR: Final[float] = 0.336  # rho (1.2 kg/m3) * cp (1008 J/kg*K) / 3600
+DEFAULT_NOMINAL_AIRFLOW_M3H: Final[int] = 550
 DEFAULT_TEMP_STEP: Final[float] = 1.0
 DEFAULT_HUMID_STEP: Final[float] = 1.0
 DEFAULT_SPEED_STEP: Final[float] = 1.0
@@ -593,6 +602,9 @@ BASE_ENABLED_SENSORS: Final[tuple[str, ...]] = (
     KEY_TEMPERATURE_TARGET,
     KEY_SPEED,
     KEY_SPEED_TARGET,
+    KEY_AIRFLOW,
+    KEY_HEATER_THERMAL_POWER,
+    KEY_HEATER_EFFICIENCY,
     KEY_FILTER_DUST,
     KEY_UNIT_STATE,
     KEY_MODE,
@@ -798,6 +810,9 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_SPEED_FACT: "Фактическая скорость",
             KEY_POWER_CONSUMPTION: "Потребляемая мощность",
             KEY_ENERGY_CONSUMPTION: "Потреблённая энергия",
+            KEY_AIRFLOW: "Расход воздуха (расчётный)",
+            KEY_HEATER_THERMAL_POWER: "Тепловая мощность калорифера (расчётная)",
+            KEY_HEATER_EFFICIENCY: "КПД калорифера (расчётный)",
             KEY_FILTER_DUST: "Загрязнённость фильтра",
             KEY_HUMIDITY: "Влажность",
             KEY_HUMIDITY_TARGET: "Заданная влажность",
@@ -923,6 +938,9 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_SPEED_FACT: "Actual fan speed",
             KEY_POWER_CONSUMPTION: "Power consumption",
             KEY_ENERGY_CONSUMPTION: "Energy consumption",
+            KEY_AIRFLOW: "Airflow (calculated)",
+            KEY_HEATER_THERMAL_POWER: "Heater thermal power (calculated)",
+            KEY_HEATER_EFFICIENCY: "Heater efficiency (calculated)",
             KEY_FILTER_DUST: "Filter pollution",
             KEY_HUMIDITY: "Humidity",
             KEY_HUMIDITY_TARGET: "Target humidity",

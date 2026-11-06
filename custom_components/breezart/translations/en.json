@@ -246,6 +246,25 @@
       "speed_fact": {
         "name": "Actual fan speed"
       },
+      "airflow": {
+        "name": "Airflow",
+        "state_attributes": {
+          "nominal_airflow_m3h": {
+            "name": "Nominal model airflow (m³/h)"
+          }
+        }
+      },
+      "heater_thermal_power": {
+        "name": "Heater thermal power",
+        "state_attributes": {
+          "temp_delta_c": {
+            "name": "Temperature delta (°C)"
+          }
+        }
+      },
+      "heater_efficiency": {
+        "name": "Heater efficiency"
+      },
       "power_consumption": {
         "name": "Power consumption"
       },

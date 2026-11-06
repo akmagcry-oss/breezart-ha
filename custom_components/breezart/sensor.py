@@ -20,13 +20,17 @@ from .const import (
     ATTR_CONTROLLER_TIME,
     ATTR_FILTER_STATUS,
     ATTR_FILTER_STATUS_KEY,
+    ATTR_NOMINAL_AIRFLOW,
     ATTR_SCENARIO_NUMBER,
     ATTR_SCHEDULE_ENABLED,
+    ATTR_TEMP_DELTA,
     COLOR_IND_MAP,
     COLOR_MSG_MAP,
     DATA_COORDINATOR,
+    DEFAULT_NOMINAL_AIRFLOW_M3H,
     DOMAIN,
     KEY_ACTIVE_SCENARIO,
+    KEY_AIRFLOW,
     KEY_CO2,
     KEY_COLOR_IND,
     KEY_COLOR_MSG,
@@ -38,6 +42,8 @@ from .const import (
     KEY_FILTER4_POLLUTION,
     KEY_FILTER_DUST,
     KEY_FIRMWARE_VER,
+    KEY_HEATER_EFFICIENCY,
+    KEY_HEATER_THERMAL_POWER,
     KEY_HUMIDITY,
     KEY_HUMIDITY_OUTDOOR,
     KEY_HUMIDITY_ROOM,
@@ -53,6 +59,7 @@ from .const import (
     KEY_SPEED,
     KEY_SPEED_FACT,
     KEY_SPEED_TARGET,
+    KEY_TEMP_DELTA,
     KEY_TEMP_OUTDOOR,
     KEY_TEMP_ROOM,
     KEY_TEMP_SUPPLY,
@@ -67,6 +74,7 @@ from .const import (
     SCENARIO_OFF,
     SCENARIO_STANDBY,
     STATE_KEY_UNKNOWN,
+    UNIT_M3H,
     UNIT_PPB,
     UNIT_PPM,
     UNIT_STATE_MAP,
@@ -262,6 +270,62 @@ class BreezartScenarioSensor(BreezartTextSensor):
         return attrs
 
 
+class BreezartAirflowSensor(BreezartSensor):
+    """Calculated volumetric airflow sensor (m³/h) with nominal capacity attribute."""
+
+    _attr_icon = "mdi:weather-windy"
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: BreezartDataCoordinator,
+        enabled_default: bool = True,
+    ) -> None:
+        """Initialize the airflow sensor."""
+        super().__init__(
+            coordinator,
+            key=KEY_AIRFLOW,
+            unit=UNIT_M3H,
+            enabled_default=enabled_default,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int] | None:
+        """Return nominal airflow capacity (m³/h) for the model preset."""
+        raw_nom = int(self.coordinator.preset.get("airflow_m3h", 0) or 0)
+        nominal = raw_nom if raw_nom > 0 else DEFAULT_NOMINAL_AIRFLOW_M3H
+        return {ATTR_NOMINAL_AIRFLOW: nominal}
+
+
+class BreezartHeaterPowerSensor(BreezartSensor):
+    """Calculated sensible heater thermal power sensor (W) with temperature delta attribute."""
+
+    _attr_icon = "mdi:radiator"
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: BreezartDataCoordinator,
+        enabled_default: bool = True,
+    ) -> None:
+        """Initialize the heater thermal power sensor."""
+        super().__init__(
+            coordinator,
+            key=KEY_HEATER_THERMAL_POWER,
+            device_class=SensorDeviceClass.POWER,
+            unit=UnitOfPower.WATT,
+            enabled_default=enabled_default,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float | None] | None:
+        """Return supply-to-outdoor temperature difference (°C)."""
+        if not self.coordinator.data:
+            return None
+        return {ATTR_TEMP_DELTA: self.coordinator.data.get(KEY_TEMP_DELTA)}
+
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -341,7 +405,11 @@ async def async_setup_entry(
             unit=PERCENTAGE,
             enabled_default=_is_enabled(KEY_SPEED_FACT),
         ),
-        # --- Power & Energy Consumption ---
+        BreezartAirflowSensor(
+            coordinator,
+            enabled_default=_is_enabled(KEY_AIRFLOW),
+        ),
+        # --- Power, Energy & Heater Thermal Performance ---
         BreezartSensor(
             coordinator,
             KEY_POWER_CONSUMPTION,
@@ -352,6 +420,16 @@ async def async_setup_entry(
         BreezartEnergySensor(
             coordinator,
             enabled_default=_is_enabled(KEY_ENERGY_CONSUMPTION),
+        ),
+        BreezartHeaterPowerSensor(
+            coordinator,
+            enabled_default=_is_enabled(KEY_HEATER_THERMAL_POWER),
+        ),
+        BreezartSensor(
+            coordinator,
+            KEY_HEATER_EFFICIENCY,
+            unit=PERCENTAGE,
+            enabled_default=_is_enabled(KEY_HEATER_EFFICIENCY),
         ),
         # --- Filter Dust ---
         BreezartSensor(

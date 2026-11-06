@@ -20,6 +20,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    AIR_HEAT_CAPACITY_FACTOR,
     BIT_CHANGE_FILTER,
     BIT_COLOR_IND_END,
     BIT_COLOR_IND_START,
@@ -70,6 +71,7 @@ from .const import (
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
     DEFAULT_NAME,
+    DEFAULT_NOMINAL_AIRFLOW_M3H,
     DEFAULT_NOTIFY_SERVICE,
     DEFAULT_PASSWORD,
     DEFAULT_PORT,
@@ -94,6 +96,7 @@ from .const import (
     ISSUE_FREEZE,
     ISSUE_OVERHEAT,
     KEY_ACTIVE_SCENARIO,
+    KEY_AIRFLOW,
     KEY_CHANGE_FILTER,
     KEY_CO2,
     KEY_COLOR_IND,
@@ -111,6 +114,8 @@ from .const import (
     KEY_HAS_COOLER,
     KEY_HAS_HUMIDIFIER,
     KEY_HAS_VAV,
+    KEY_HEATER_EFFICIENCY,
+    KEY_HEATER_THERMAL_POWER,
     KEY_HUMIDITY,
     KEY_HUMIDITY_OUTDOOR,
     KEY_HUMIDITY_ROOM,
@@ -139,6 +144,7 @@ from .const import (
     KEY_SPEED_MAX,
     KEY_SPEED_MIN,
     KEY_SPEED_TARGET,
+    KEY_TEMP_DELTA,
     KEY_TEMP_MAX,
     KEY_TEMP_MIN,
     KEY_TEMP_OUTDOOR,
@@ -2075,6 +2081,89 @@ def integrate_energy_kwh(
     return round(base + delta_kwh, 6)
 
 
+@dataclass(frozen=True, slots=True)
+class ThermalAirflowMetrics:
+    """Calculated volumetric airflow (m³/h) and heater thermal output/efficiency."""
+
+    airflow_m3h: float
+    heater_thermal_power_w: float | None
+    heater_efficiency_pct: float | None
+    temp_delta_c: float | None
+
+
+def calculate_airflow_and_thermal_metrics(
+    *,
+    power: bool,
+    speed: int | float | None,
+    speed_max: int,
+    speed_fact: int | float | None,
+    nominal_airflow_m3h: int | float,
+    temp_supply: float | int | None,
+    temp_outdoor: float | int | None,
+    temp_target: float | int | None = None,
+    power_consumption_w: float | int | None = None,
+) -> ThermalAirflowMetrics:
+    """Calculate volumetric airflow (m³/h), sensible heating power (W), and heater efficiency (%)."""
+    nom_m3h = (
+        float(nominal_airflow_m3h)
+        if nominal_airflow_m3h and float(nominal_airflow_m3h) > 0
+        else float(DEFAULT_NOMINAL_AIRFLOW_M3H)
+    )
+    spd = float(speed) if speed is not None else 0.0
+    if not power or (spd <= 0 and (speed_fact is None or float(speed_fact) <= 0)):
+        return ThermalAirflowMetrics(
+            airflow_m3h=0.0,
+            heater_thermal_power_w=0.0,
+            heater_efficiency_pct=0.0,
+            temp_delta_c=0.0,
+        )
+
+    if speed_fact is not None and float(speed_fact) > 0:
+        ratio = min(1.0, max(0.0, float(speed_fact) / 100.0))
+    else:
+        max_spd = max(1.0, float(speed_max))
+        ratio = min(1.0, max(0.0, spd / max_spd))
+
+    airflow_m3h = round(nom_m3h * ratio, 1)
+
+    if temp_supply is None or temp_outdoor is None:
+        return ThermalAirflowMetrics(
+            airflow_m3h=airflow_m3h,
+            heater_thermal_power_w=None,
+            heater_efficiency_pct=None,
+            temp_delta_c=None,
+        )
+
+    raw_dt = float(temp_supply) - float(temp_outdoor)
+    temp_delta_c = round(raw_dt, 1)
+    if raw_dt <= 0 or airflow_m3h <= 0:
+        return ThermalAirflowMetrics(
+            airflow_m3h=airflow_m3h,
+            heater_thermal_power_w=0.0,
+            heater_efficiency_pct=0.0,
+            temp_delta_c=temp_delta_c,
+        )
+
+    thermal_power_w = round(AIR_HEAT_CAPACITY_FACTOR * airflow_m3h * raw_dt, 1)
+
+    efficiency_pct: float | None = None
+    if power_consumption_w is not None and float(power_consumption_w) > 0:
+        raw_eff = (thermal_power_w / float(power_consumption_w)) * 100.0
+        efficiency_pct = round(min(100.0, max(0.0, raw_eff)), 1)
+    elif temp_target is not None and float(temp_target) > float(temp_outdoor):
+        target_dt = float(temp_target) - float(temp_outdoor)
+        raw_eff = (raw_dt / target_dt) * 100.0
+        efficiency_pct = round(min(100.0, max(0.0, raw_eff)), 1)
+
+    return ThermalAirflowMetrics(
+        airflow_m3h=airflow_m3h,
+        heater_thermal_power_w=thermal_power_w,
+        heater_efficiency_pct=efficiency_pct,
+        temp_delta_c=temp_delta_c,
+    )
+
+
+
 class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator that polls Breezart for state and sensor data and dispatches event notifications."""
 
@@ -2419,6 +2508,31 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 self._last_energy_ts = now
                 data[KEY_ENERGY_CONSUMPTION] = round(self._energy_kwh, 4)
+
+                raw_nom_airflow = int(self.preset.get("airflow_m3h", 0) or 0)
+                nominal_airflow = (
+                    raw_nom_airflow if raw_nom_airflow > 0 else DEFAULT_NOMINAL_AIRFLOW_M3H
+                )
+                supply_t = (
+                    data.get(KEY_TEMP_SUPPLY)
+                    if data.get(KEY_TEMP_SUPPLY) is not None
+                    else data.get(KEY_TEMPERATURE)
+                )
+                thermal = calculate_airflow_and_thermal_metrics(
+                    power=bool(data.get(KEY_POWER, False)),
+                    speed=data.get(KEY_SPEED),
+                    speed_max=int(self.client.speed_max),
+                    speed_fact=data.get(KEY_SPEED_FACT),
+                    nominal_airflow_m3h=nominal_airflow,
+                    temp_supply=supply_t,
+                    temp_outdoor=data.get(KEY_TEMP_OUTDOOR),
+                    temp_target=data.get(KEY_TEMPERATURE_TARGET),
+                    power_consumption_w=data.get(KEY_POWER_CONSUMPTION),
+                )
+                data[KEY_AIRFLOW] = thermal.airflow_m3h
+                data[KEY_HEATER_THERMAL_POWER] = thermal.heater_thermal_power_w
+                data[KEY_HEATER_EFFICIENCY] = thermal.heater_efficiency_pct
+                data[KEY_TEMP_DELTA] = thermal.temp_delta_c
 
                 self._consecutive_failures = 0
                 self._sync_repair_issues(data)

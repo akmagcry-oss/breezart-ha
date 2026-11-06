@@ -382,3 +382,105 @@ async def test_vav_entities_and_zone_control(
     fake_client.set_vav_zone_speed.assert_awaited_once_with(2, 6)
 
 
+def test_calculate_airflow_and_thermal_metrics_pure_logic() -> None:
+    """Pure thermal calculator computes m3/h airflow, sensible thermal power (W), and heater efficiency (%)."""
+    from custom_components.breezart.coordinator import (
+        calculate_airflow_and_thermal_metrics,
+    )
+
+    # 1. Unit running at 50% speed on a 1000 m3/h model, outdoor -5°C -> supply +20°C (dT = 25 K), electric power 4500 W
+    # Airflow = 500 m3/h; Thermal power = 0.336 * 500 * 25 = 4200.0 W; Efficiency = 4200 / 4500 * 100 = 93.3%
+    m1 = calculate_airflow_and_thermal_metrics(
+        power=True,
+        speed=5,
+        speed_max=10,
+        speed_fact=50,
+        nominal_airflow_m3h=1000,
+        temp_supply=20.0,
+        temp_outdoor=-5.0,
+        temp_target=22.0,
+        power_consumption_w=4500.0,
+    )
+    assert m1.airflow_m3h == pytest.approx(500.0)
+    assert m1.temp_delta_c == pytest.approx(25.0)
+    assert m1.heater_thermal_power_w == pytest.approx(4200.0)
+    assert m1.heater_efficiency_pct == pytest.approx(93.3, rel=1e-2)
+
+    # 2. Water heater (no electrical power_consumption_w): efficiency uses temperature lift ratio
+    # outdoor 0°C -> supply 18°C with target 20°C => 18 / 20 * 100 = 90.0%
+    m2 = calculate_airflow_and_thermal_metrics(
+        power=True,
+        speed=8,
+        speed_max=10,
+        speed_fact=None,
+        nominal_airflow_m3h=550,
+        temp_supply=18.0,
+        temp_outdoor=0.0,
+        temp_target=20.0,
+        power_consumption_w=None,
+    )
+    assert m2.airflow_m3h == pytest.approx(440.0)
+    assert m2.heater_thermal_power_w == pytest.approx(0.336 * 440.0 * 18.0, rel=1e-3)
+    assert m2.heater_efficiency_pct == pytest.approx(90.0, rel=1e-2)
+
+    # 3. Unit powered off -> 0 m3/h, 0 W, 0%
+    m_off = calculate_airflow_and_thermal_metrics(
+        power=False,
+        speed=0,
+        speed_max=10,
+        speed_fact=0,
+        nominal_airflow_m3h=550,
+        temp_supply=20.0,
+        temp_outdoor=5.0,
+        temp_target=22.0,
+        power_consumption_w=0.0,
+    )
+    assert m_off.airflow_m3h == 0.0
+    assert m_off.heater_thermal_power_w == 0.0
+    assert m_off.heater_efficiency_pct == 0.0
+
+
+async def test_airflow_and_heater_thermal_sensors(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """Airflow (m³/h), heater thermal power (W), and heater efficiency (%) sensors update from state/sensors."""
+    from custom_components.breezart.const import (
+        ATTR_NOMINAL_AIRFLOW,
+        ATTR_TEMP_DELTA,
+        DATA_COORDINATOR,
+        DOMAIN,
+        KEY_AIRFLOW,
+        KEY_HEATER_EFFICIENCY,
+        KEY_HEATER_THERMAL_POWER,
+        KEY_POWER_CONSUMPTION,
+        KEY_TEMP_OUTDOOR,
+        KEY_TEMP_SUPPLY,
+    )
+
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+
+    fake_client.sensors[KEY_TEMP_SUPPLY] = 21.0
+    fake_client.sensors[KEY_TEMP_OUTDOOR] = 1.0  # dT = 20 K
+    fake_client.sensors[KEY_POWER_CONSUMPTION] = 1200.0
+    coordinator._cached_sensors = {}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    airflow_state = hass.states.get(entity_id_for(hass, "sensor", KEY_AIRFLOW))
+    power_state = hass.states.get(entity_id_for(hass, "sensor", KEY_HEATER_THERMAL_POWER))
+    eff_state = hass.states.get(entity_id_for(hass, "sensor", KEY_HEATER_EFFICIENCY))
+
+    assert airflow_state is not None
+    # Default nominal airflow for custom preset is 550 m3/h; speed_fact=30% -> 165.0 m3/h
+    assert float(airflow_state.state) == pytest.approx(165.0)
+    assert airflow_state.attributes[ATTR_NOMINAL_AIRFLOW] == 550
+
+    # Thermal power = 0.336 * 165 * 20 = 1108.8 W
+    assert float(power_state.state) == pytest.approx(1108.8, rel=1e-2)
+    assert power_state.attributes[ATTR_TEMP_DELTA] == pytest.approx(20.0)
+
+    # Efficiency = 1108.8 / 1200 * 100 = 92.4%
+    assert float(eff_state.state) == pytest.approx(92.4, rel=1e-2)
+
+
