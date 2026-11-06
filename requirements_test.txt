@@ -1,1 +1,2 @@
-pytest-homeassistant-custom-component
+# Latest Home Assistant (Python 3.14). Bumped by Dependabot.
+pytest-homeassistant-custom-component==0.13.375
