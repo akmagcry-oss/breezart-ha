@@ -163,6 +163,71 @@ async def test_native_error_reply_keeps_connection(serve) -> None:
     await client.disconnect()
 
 
+async def test_native_non_auth_error_raises_value_error_not_permission_error(serve) -> None:
+    """Protocol/command errors (VEFrm, VECd1, VEDat) raise ValueError so they do not trigger Reauth."""
+
+    async def handler(reader, writer):
+        while await reader.read(100):
+            writer.write(b"VECd1_unknown")
+            await writer.drain()
+
+    client = BreezartTCPClient("127.0.0.1", await serve(handler), timeout=1)
+    await client.connect()
+    with pytest.raises(ValueError, match="Request of type 1 not found"):
+        await client.get_sensors()
+    await client.disconnect()
+
+
+async def test_native_timeout_error_masks_password(serve) -> None:
+    """TimeoutError message masks the hex-encoded password token."""
+
+    async def handler(reader, writer):
+        await reader.read(100)
+        await asyncio.sleep(2)
+
+    client = BreezartTCPClient("127.0.0.1", await serve(handler), password="21579", timeout=0.15)
+    await client.connect()
+    with pytest.raises(TimeoutError) as exc_info:
+        await client.get_state()
+    # 21579 in hex is "544b"; it must not appear in the exception message
+    assert "544b" not in str(exc_info.value)
+    assert "VSt07_***" in str(exc_info.value)
+
+
+async def test_native_truncated_packets_raise_value_error(serve) -> None:
+    """Truncated VPr07 or VSt07 frames raise ValueError instead of IndexError."""
+    replies = [b"VPr07_2305_a01", b"VSt07_41_1"]
+
+    async def handler(reader, writer):
+        while await reader.read(100):
+            writer.write(replies.pop(0))
+            await writer.drain()
+
+    client = BreezartTCPClient("127.0.0.1", await serve(handler), timeout=1)
+    await client.connect()
+    with pytest.raises(ValueError, match="Unexpected properties response"):
+        await client.get_properties()
+    with pytest.raises(ValueError, match="Unexpected state response"):
+        await client.get_state()
+    await client.disconnect()
+
+
+async def test_modbus_invalid_mbap_header_rejected(serve) -> None:
+    """A corrupted or non-Modbus MBAP header (bad protocol ID or length) raises ValueError and drops connection."""
+
+    async def handler(reader, writer):
+        await reader.readexactly(12)
+        # Send non-zero protocol_id=0x4854 ('HT') and huge length=20000
+        writer.write(struct.pack(">HHHB", 1, 0x4854, 20000, 1))
+        await writer.drain()
+
+    client = BreezartModbusClient("127.0.0.1", await serve(handler), timeout=0.5)
+    await client.connect()
+    with pytest.raises(ValueError, match="Invalid Modbus MBAP header"):
+        await client._read_registers(MODBUS_FC_READ_INPUT, 10, 1)
+    assert not client.is_connected
+
+
 # --- Modbus TCP -------------------------------------------------------------
 
 

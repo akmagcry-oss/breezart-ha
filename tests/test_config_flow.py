@@ -236,8 +236,17 @@ async def test_user_flow_autodiscovery_prefills_and_selects_device(hass: HomeAss
 async def test_reconfigure_flow_updates_host_and_reloads(
     hass: HomeAssistant, setup_integration
 ) -> None:
-    """Reconfigure flow updates host/port/protocol/password and reloads the entry."""
+    """Reconfigure flow updates host/port/protocol/password, migrates registries, and reloads the entry."""
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+
     entry = setup_integration
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    climate_entity_id = "climate.breezart_custom_auto_climate"
+    old_entry = ent_reg.async_get(climate_entity_id)
+    assert old_entry is not None
+    assert old_entry.unique_id == f"{DOMAIN}_{HOST}_climate"
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": "reconfigure", "entry_id": entry.entry_id},
@@ -270,6 +279,10 @@ async def test_reconfigure_flow_updates_host_and_reloads(
     assert entry.data[CONF_SLAVE_ID] == 2
     assert entry.data[CONF_PASSWORD] == "99999"
     assert entry.data[CONF_MODEL] == "1000_lux"
+    migrated_entry = ent_reg.async_get(climate_entity_id)
+    assert migrated_entry is not None
+    assert migrated_entry.unique_id == f"{DOMAIN}_192.168.1.200_climate"
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, "192.168.1.200")}) is not None
     mock_reload.assert_called_once_with(entry.entry_id)
 
 

@@ -84,6 +84,7 @@ from .const import (
     DISCOVERY_CONNECT_TIMEOUT,
     DISCOVERY_PROBE_TIMEOUT,
     DOMAIN,
+    ERR_PREFIX_WRONG_PASS,
     ERROR_PREFIX,
     EVENT_BREEZART_NOTIFICATION,
     FILTER_POLLUTION_REPLACE_MAX,
@@ -598,16 +599,25 @@ class BreezartTCPClient:
             parts.append(_dec_to_hex(data))
         return DELIMITER.join(parts)
 
+    @staticmethod
+    def _mask_request(request: str) -> str:
+        """Mask the hex-encoded password token (second field) in a Native TCP request string."""
+        parts = request.split(DELIMITER)
+        if len(parts) >= 2:
+            parts[1] = "***"
+        return DELIMITER.join(parts)
+
     def _split_response(self, message: str) -> list[str]:
         """Split response by delimiter, removing empty parts."""
         return [v for v in message.split(DELIMITER) if v]
 
     def _check_error(self, parts: list[str]) -> None:
-        """Raise if response indicates an error."""
+        """Raise PermissionError for wrong password (VEPas) and ValueError for other protocol errors."""
         if parts and parts[0] in ERROR_PREFIX:
-            raise PermissionError(
-                f"Breezart error: {ERROR_PREFIX[parts[0]]} ({DELIMITER.join(parts)})"
-            )
+            msg = f"Breezart error: {ERROR_PREFIX[parts[0]]} ({DELIMITER.join(parts)})"
+            if parts[0] == ERR_PREFIX_WRONG_PASS:
+                raise PermissionError(msg)
+            raise ValueError(msg)
 
     async def connect(self) -> None:
         """Open TCP connection."""
@@ -670,7 +680,8 @@ class BreezartTCPClient:
             if not self._writer or not self._reader:
                 raise ConnectionError("Not connected to Breezart")
 
-            _LOGGER.debug("Breezart Native TX: %s", request)
+            masked_req = self._mask_request(request)
+            _LOGGER.debug("Breezart Native TX: %s", masked_req)
             try:
                 self._writer.write(request.encode())
                 await self._writer.drain()
@@ -678,7 +689,7 @@ class BreezartTCPClient:
             except asyncio.TimeoutError as err:
                 # A late reply would be read as the answer to the next request.
                 self._drop_connection()
-                raise TimeoutError(f"No response for request: {request}") from err
+                raise TimeoutError(f"No response for request: {masked_req}") from err
             except BaseException as err:
                 self._drop_connection()
                 if isinstance(err, Exception) and not isinstance(err, ConnectionError):
@@ -688,7 +699,7 @@ class BreezartTCPClient:
             response = raw.decode(errors="ignore").strip()
             if not response:
                 self._drop_connection()
-                raise TimeoutError(f"Empty response for request: {request}")
+                raise TimeoutError(f"Empty response for request: {masked_req}")
 
             _LOGGER.debug("Breezart Native RX: %s", response)
             parts = self._split_response(response)
@@ -700,7 +711,7 @@ class BreezartTCPClient:
         req = self._build_request(REQ_GET_PROPERTIES)
         parts = await self._send(req)
 
-        if not parts or parts[0] != RESP_PROPERTIES:
+        if not parts or parts[0] != RESP_PROPERTIES or len(parts) <= VPR07_IDX_FW:
             raise ValueError(f"Unexpected properties response: {parts}")
 
         hw_temp_min = _parse_bits(parts[VPR07_IDX_TEMPR], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
@@ -765,7 +776,7 @@ class BreezartTCPClient:
         req = self._build_request(REQ_GET_STATE)
         parts = await self._send(req)
 
-        if not parts or parts[0] != RESP_STATE:
+        if not parts or parts[0] != RESP_STATE or len(parts) <= VST07_IDX_MISC:
             raise ValueError(f"Unexpected state response: {parts}")
 
         pwr_btn_state = _parse_bits(parts[VST07_IDX_STATE], BIT_PWR_BTN)
@@ -911,7 +922,7 @@ class BreezartTCPClient:
                     result[KEY_VAV_ZONES] = zones_map
                     for z, z_speed in zones_map.items():
                         result[vav_zone_key(z)] = z_speed
-            except (PermissionError, ValueError) as err:
+            except ValueError as err:
                 self._vav_poll_supported = False
                 _LOGGER.debug("VAV zone list (VZLst) not supported by unit: %s", err)
 
@@ -1096,9 +1107,13 @@ class BreezartModbusClient:
                 self._reader.readexactly(MODBUS_MBAP_HEADER_LEN),
                 timeout=self.timeout,
             )
-            rx_tx_id, _rx_proto, rx_len, _rx_unit = struct.unpack(">HHHB", header)
+            rx_tx_id, rx_proto, rx_len, _rx_unit = struct.unpack(">HHHB", header)
+            if rx_proto != MODBUS_PROTOCOL_ID or not (2 <= rx_len <= 260):
+                raise ValueError(
+                    f"Invalid Modbus MBAP header: proto={rx_proto}, len={rx_len}"
+                )
             pdu = await asyncio.wait_for(
-                self._reader.readexactly(max(0, rx_len - 1)),
+                self._reader.readexactly(rx_len - 1),
                 timeout=self.timeout,
             )
         except BaseException:
@@ -1604,6 +1619,12 @@ class BreezartModbusClient:
                 self._record_optional_failure(
                     MODBUS_HR_VAV_BLOCK_START, "VAV zones block", err, definitive=definitive
                 )
+            except (TimeoutError, ConnectionError, OSError, asyncio.IncompleteReadError) as err:
+                self._record_optional_failure(
+                    MODBUS_HR_VAV_BLOCK_START, "VAV zones block", err, definitive=False
+                )
+                if not self.is_connected:
+                    await self.connect()
             except Exception as err:
                 self._record_optional_failure(
                     MODBUS_HR_VAV_BLOCK_START, "VAV zones block", err, definitive=False

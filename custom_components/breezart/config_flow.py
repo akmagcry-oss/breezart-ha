@@ -329,6 +329,46 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return entry_data[DATA_COORDINATOR].async_release_connection()
         return nullcontext()
 
+    def _migrate_host_references(
+        self,
+        entry: config_entries.ConfigEntry,
+        old_host: str,
+        new_host: str,
+    ) -> None:
+        """Migrate entity unique_ids, device identifiers, and Repairs issues when host changes."""
+        if not old_host or not new_host or old_host == new_host:
+            return
+        if not hasattr(self, "hass") or self.hass is None:
+            return
+
+        from homeassistant.helpers import (
+            device_registry as dr,
+            entity_registry as er,
+            issue_registry as ir,
+        )
+        from .const import REPAIR_ISSUE_KEYS
+
+        old_prefix = f"{DOMAIN}_{old_host}_"
+        new_prefix = f"{DOMAIN}_{new_host}_"
+        ent_reg = er.async_get(self.hass)
+        for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            if ent.unique_id.startswith(old_prefix):
+                new_uid = f"{new_prefix}{ent.unique_id[len(old_prefix):]}"
+                if ent_reg.async_get_entity_id(ent.domain, ent.platform, new_uid) is None:
+                    ent_reg.async_update_entity(ent.entity_id, new_unique_id=new_uid)
+
+        dev_reg = dr.async_get(self.hass)
+        old_device = dev_reg.async_get_device(identifiers={(DOMAIN, old_host)})
+        if old_device is not None and dev_reg.async_get_device(identifiers={(DOMAIN, new_host)}) is None:
+            new_identifiers = {
+                (DOMAIN, new_host) if ident == (DOMAIN, old_host) else ident
+                for ident in old_device.identifiers
+            }
+            dev_reg.async_update_device(old_device.id, new_identifiers=new_identifiers)
+
+        for issue_key in REPAIR_ISSUE_KEYS:
+            ir.async_delete_issue(self.hass, DOMAIN, f"{old_host}_{issue_key}")
+
     async def _async_update_and_reload_entry(
         self, entry: config_entries.ConfigEntry, **update_kwargs: Any
     ) -> None:
@@ -392,6 +432,9 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 for existing in self._async_current_entries():
                     if existing.entry_id != entry.entry_id and existing.unique_id == new_unique_id:
                         return self.async_abort(reason=ABORT_ALREADY_CONFIGURED)
+
+                old_host = str(entry.data.get(CONF_HOST, "")).strip()
+                self._migrate_host_references(entry, old_host, host)
 
                 preset = get_model_preset(model)
                 new_title = f"{DEFAULT_NAME} {preset['name']} ({host})"
