@@ -60,8 +60,13 @@ ERR_CANNOT_CONNECT: Final[str] = "cannot_connect"
 ERR_INVALID_AUTH: Final[str] = "invalid_auth"
 ERR_UNKNOWN: Final[str] = "unknown"
 ABORT_ALREADY_CONFIGURED: Final[str] = "already_configured"
+ABORT_RECONFIGURE_SUCCESSFUL: Final[str] = "reconfigure_successful"
+ABORT_REAUTH_SUCCESSFUL: Final[str] = "reauth_successful"
 STEP_USER: Final[str] = "user"
 STEP_INIT: Final[str] = "init"
+STEP_RECONFIGURE: Final[str] = "reconfigure"
+STEP_REAUTH: Final[str] = "reauth"
+STEP_REAUTH_CONFIRM: Final[str] = "reauth_confirm"
 
 # Protocol delimiter & formatting
 DELIMITER: Final[str] = "_"

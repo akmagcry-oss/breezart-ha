@@ -231,3 +231,129 @@ async def test_user_flow_autodiscovery_prefills_and_selects_device(hass: HomeAss
     assert result["data"][CONF_HOST] == "192.168.1.88"
     assert result["data"][CONF_PORT] == 1560
     assert result["data"][CONF_PROTOCOL] == PROTOCOL_NATIVE_TCP
+
+
+async def test_reconfigure_flow_updates_host_and_reloads(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """Reconfigure flow updates host/port/protocol/password and reloads the entry."""
+    entry = setup_integration
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    detect = AsyncMock(return_value=(FakeClient(), PROTOCOL_MODBUS_TCP, 502))
+    with patch(DETECT, detect), patch.object(
+        hass.config_entries, "async_reload", AsyncMock(return_value=True)
+    ) as mock_reload:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_HOST: "192.168.1.200",
+                CONF_PORT: 502,
+                CONF_PROTOCOL: PROTOCOL_MODBUS_TCP,
+                CONF_SLAVE_ID: 2,
+                CONF_PASSWORD: "99999",
+                CONF_MODEL: "1000_lux",
+            },
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == "192.168.1.200"
+    assert entry.data[CONF_PORT] == 502
+    assert entry.data[CONF_PROTOCOL] == PROTOCOL_MODBUS_TCP
+    assert entry.data[CONF_SLAVE_ID] == 2
+    assert entry.data[CONF_PASSWORD] == "99999"
+    assert entry.data[CONF_MODEL] == "1000_lux"
+    mock_reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_reconfigure_flow_reports_errors(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """Reconfigure flow keeps form open when connection or authentication fails."""
+    entry = setup_integration
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    with patch(DETECT, AsyncMock(side_effect=ConnectionError("unreachable"))):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_HOST: "192.168.1.250",
+                CONF_PORT: 1560,
+                CONF_PROTOCOL: PROTOCOL_NATIVE_TCP,
+                CONF_SLAVE_ID: 1,
+                CONF_PASSWORD: "21579",
+                CONF_MODEL: "custom",
+            },
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reauth_flow_updates_password_and_reloads(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """Reauth flow prompts for a new password, verifies it, updates entry, and reloads."""
+    entry = setup_integration
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reauth", "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    # First attempt with wrong password keeps form open with invalid_auth
+    with patch(DETECT, AsyncMock(side_effect=PermissionError("VEPas"))):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PASSWORD: "00000"},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == {"base": "invalid_auth"}
+
+    # Second attempt with valid password updates entry and aborts with reauth_successful
+    detect = AsyncMock(return_value=(FakeClient(), PROTOCOL_NATIVE_TCP, 1560))
+    with patch(DETECT, detect), patch.object(
+        hass.config_entries, "async_reload", AsyncMock(return_value=True)
+    ) as mock_reload:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_PASSWORD: "54321"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_PASSWORD] == "54321"
+    mock_reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_coordinator_permission_error_raises_config_entry_auth_failed(
+    hass: HomeAssistant, setup_integration, fake_client
+) -> None:
+    """A PermissionError (VEPas) during polling raises ConfigEntryAuthFailed to trigger reauth."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+
+    entry = setup_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+
+    with patch.object(
+        fake_client, "get_state", AsyncMock(side_effect=PermissionError("VEPas_bad_pass"))
+    ):
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coordinator._async_update_data()
+

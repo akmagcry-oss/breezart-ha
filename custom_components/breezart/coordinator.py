@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -2547,6 +2547,11 @@ class BreezartDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 return data
 
+            except PermissionError as err:
+                self._properties_loaded = False
+                self._cached_sensors = {}
+                await self.client.disconnect()
+                raise ConfigEntryAuthFailed(f"Invalid remote access password: {err}") from err
             except (ConnectionError, OSError, TimeoutError, asyncio.IncompleteReadError) as err:
                 self._properties_loaded = False
                 self._cached_sensors = {}

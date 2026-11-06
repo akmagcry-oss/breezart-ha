@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from contextlib import nullcontext
 from typing import Any
 
@@ -18,6 +19,9 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    ABORT_ALREADY_CONFIGURED,
+    ABORT_REAUTH_SUCCESSFUL,
+    ABORT_RECONFIGURE_SUCCESSFUL,
     CONF_DISCOVERED_DEVICE,
     CONF_MODEL,
     CONF_NOTIFY_SERVICE,
@@ -58,6 +62,9 @@ from .const import (
     NOTIFICATION_SETTING_KEYS,
     PROTOCOL_OPTIONS,
     STEP_INIT,
+    STEP_REAUTH,
+    STEP_REAUTH_CONFIRM,
+    STEP_RECONFIGURE,
     STEP_USER,
     get_model_preset,
 )
@@ -297,6 +304,220 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id=STEP_USER,
             data_schema=vol.Schema(schema_fields),
             errors=errors,
+        )
+
+    def _get_target_entry(self) -> config_entries.ConfigEntry:
+        """Resolve the target ConfigEntry for reconfigure or reauth flows."""
+        entry_id = self.context.get("entry_id")
+        if entry_id and hasattr(self, "hass") and self.hass is not None:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is not None:
+                return entry
+        if hasattr(self, "_get_reconfigure_entry") and self.context.get("source") == STEP_RECONFIGURE:
+            return self._get_reconfigure_entry()
+        if hasattr(self, "_get_reauth_entry"):
+            return self._get_reauth_entry()
+        raise ValueError("Target config entry not found in flow context")
+
+    def _release_entry_connection(self, entry: config_entries.ConfigEntry) -> Any:
+        """Return async context manager that temporarily releases a running single-client socket."""
+        if not hasattr(self, "hass") or self.hass is None:
+            return nullcontext()
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if entry_data and DATA_COORDINATOR in entry_data:
+            return entry_data[DATA_COORDINATOR].async_release_connection()
+        return nullcontext()
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle reconfiguration of IP/host, port, protocol, slave ID, password, and model."""
+        entry = self._get_target_entry()
+        current = {**entry.data, **entry.options}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = str(user_input.get(CONF_HOST, current.get(CONF_HOST, DEFAULT_HOST))).strip()
+            port = int(user_input.get(CONF_PORT, current.get(CONF_PORT, DEFAULT_PORT)))
+            protocol = str(user_input.get(CONF_PROTOCOL, current.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)))
+            slave_id = int(user_input.get(CONF_SLAVE_ID, current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)))
+            password = (
+                str(user_input.get(CONF_PASSWORD, current.get(CONF_PASSWORD, DEFAULT_PASSWORD))).strip()
+                or DEFAULT_PASSWORD
+            )
+            model = str(user_input.get(CONF_MODEL, current.get(CONF_MODEL, DEFAULT_MODEL)))
+
+            try:
+                async with self._release_entry_connection(entry):
+                    client, resolved_protocol, resolved_port = await async_detect_and_connect_client(
+                        host=host,
+                        port=port,
+                        password=password,
+                        model=model,
+                        protocol=protocol,
+                        slave_id=slave_id,
+                    )
+                    await client.disconnect()
+            except PermissionError as err:
+                _LOGGER.error("Reconfigure authentication error: %s", err)
+                errors["base"] = ERR_INVALID_AUTH
+            except (TimeoutError, ConnectionError, OSError, ValueError) as err:
+                _LOGGER.error("Reconfigure connection error: %s", err)
+                errors["base"] = ERR_CANNOT_CONNECT
+            except Exception as err:
+                _LOGGER.exception("Unexpected error during reconfigure test: %s", err)
+                errors["base"] = ERR_UNKNOWN
+            else:
+                new_unique_id = f"{DOMAIN}_{host}_{resolved_port}"
+                for existing in self._async_current_entries():
+                    if existing.entry_id != entry.entry_id and existing.unique_id == new_unique_id:
+                        return self.async_abort(reason=ABORT_ALREADY_CONFIGURED)
+
+                preset = get_model_preset(model)
+                new_title = f"{DEFAULT_NAME} {preset['name']} ({host})"
+                updated_data = {
+                    **entry.data,
+                    CONF_HOST: host,
+                    CONF_PORT: resolved_port,
+                    CONF_PASSWORD: password,
+                    CONF_MODEL: model,
+                    CONF_PROTOCOL: resolved_protocol,
+                    CONF_SLAVE_ID: slave_id,
+                }
+                updated_options = dict(entry.options)
+                if CONF_PORT in updated_options:
+                    updated_options[CONF_PORT] = resolved_port
+                if CONF_PROTOCOL in updated_options:
+                    updated_options[CONF_PROTOCOL] = resolved_protocol
+                if CONF_SLAVE_ID in updated_options:
+                    updated_options[CONF_SLAVE_ID] = slave_id
+                if CONF_MODEL in updated_options:
+                    updated_options[CONF_MODEL] = model
+
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    unique_id=new_unique_id,
+                    title=new_title,
+                    data=updated_data,
+                    options=updated_options,
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
+
+            current = {**current, **user_input}
+
+        model_selector = SelectSelector(
+            SelectSelectorConfig(
+                options=MODEL_OPTIONS,
+                mode=SelectSelectorMode.DROPDOWN,
+                translation_key=CONF_MODEL,
+            )
+        )
+        protocol_selector = SelectSelector(
+            SelectSelectorConfig(
+                options=PROTOCOL_OPTIONS,
+                mode=SelectSelectorMode.DROPDOWN,
+                translation_key=CONF_PROTOCOL,
+            )
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODEL, default=current.get(CONF_MODEL, DEFAULT_MODEL)
+                ): model_selector,
+                vol.Required(
+                    CONF_PROTOCOL, default=current.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
+                ): protocol_selector,
+                vol.Required(
+                    CONF_HOST, default=str(current.get(CONF_HOST, DEFAULT_HOST))
+                ): str,
+                vol.Required(
+                    CONF_PORT, default=int(current.get(CONF_PORT, DEFAULT_PORT))
+                ): int,
+                vol.Optional(
+                    CONF_SLAVE_ID, default=int(current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
+                ): int,
+                vol.Optional(
+                    CONF_PASSWORD, default=str(current.get(CONF_PASSWORD, DEFAULT_PASSWORD))
+                ): str,
+            }
+        )
+        return self.async_show_form(
+            step_id=STEP_RECONFIGURE,
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "host": str(entry.data.get(CONF_HOST, DEFAULT_HOST)),
+                "device": entry.title,
+            },
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> FlowResult:
+        """Initiate reauthentication when the remote access password becomes invalid."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle password update and verification during reauthentication."""
+        entry = self._get_target_entry()
+        current = {**entry.data, **entry.options}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            password = str(user_input.get(CONF_PASSWORD, "")).strip() or DEFAULT_PASSWORD
+            host = str(current.get(CONF_HOST, DEFAULT_HOST))
+            port = int(current.get(CONF_PORT, DEFAULT_PORT))
+            protocol = str(current.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
+            slave_id = int(current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID))
+            model = str(current.get(CONF_MODEL, DEFAULT_MODEL))
+
+            try:
+                async with self._release_entry_connection(entry):
+                    client, _, _ = await async_detect_and_connect_client(
+                        host=host,
+                        port=port,
+                        password=password,
+                        model=model,
+                        protocol=protocol,
+                        slave_id=slave_id,
+                    )
+                    await client.disconnect()
+            except PermissionError as err:
+                _LOGGER.error("Reauth authentication error: %s", err)
+                errors["base"] = ERR_INVALID_AUTH
+            except (TimeoutError, ConnectionError, OSError, ValueError) as err:
+                _LOGGER.error("Reauth connection error: %s", err)
+                errors["base"] = ERR_CANNOT_CONNECT
+            except Exception as err:
+                _LOGGER.exception("Unexpected error during reauth test: %s", err)
+                errors["base"] = ERR_UNKNOWN
+            else:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={**entry.data, CONF_PASSWORD: password},
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason=ABORT_REAUTH_SUCCESSFUL)
+
+        default_pwd = (
+            str(user_input.get(CONF_PASSWORD))
+            if user_input and CONF_PASSWORD in user_input
+            else str(current.get(CONF_PASSWORD, DEFAULT_PASSWORD))
+        )
+        return self.async_show_form(
+            step_id=STEP_REAUTH_CONFIRM,
+            data_schema=vol.Schema(
+                {vol.Required(CONF_PASSWORD, default=default_pwd): str}
+            ),
+            errors=errors,
+            description_placeholders={
+                "host": str(current.get(CONF_HOST, DEFAULT_HOST)),
+                "device": entry.title,
+            },
         )
 
 

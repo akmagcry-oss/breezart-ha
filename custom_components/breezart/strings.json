@@ -16,6 +16,25 @@
           "temp_min": "Minimum Heating Temperature, °C (default: 5)",
           "temp_max": "Maximum Heating Temperature, °C (default: 35)"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Breezart Connection",
+        "description": "Update connection parameters for {device} ({host})",
+        "data": {
+          "model": "Unit Model Preset",
+          "protocol": "Connection Protocol",
+          "host": "Host (IP address)",
+          "port": "TCP Port (502 for Modbus TCP, 1560 for Native TCP)",
+          "slave_id": "Modbus Unit / Slave ID (default: 1)",
+          "password": "Remote Access Password (only for Native TCP 1560)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Breezart ({device})",
+        "description": "Enter the updated remote access password for the Breezart controller at {host}",
+        "data": {
+          "password": "Remote Access Password"
+        }
       }
     },
     "error": {
@@ -24,7 +43,9 @@
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "This Breezart device is already configured"
+      "already_configured": "This Breezart device is already configured",
+      "reconfigure_successful": "Connection settings updated successfully",
+      "reauth_successful": "Reauthentication was successful"
     }
   },
   "options": {

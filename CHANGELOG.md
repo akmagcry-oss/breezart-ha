@@ -19,6 +19,10 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
     2. `breezart_night_quiet_mode.yaml` — Scheduled night quiet fan speed & sleep temperature with morning restore.
     3. `breezart_away_eco_mode.yaml` — Presence-based Away / Eco mode (`zone.home` / `person.*`) with optional unit shutdown or minimum speed & setback temperature.
     4. `breezart_window_open_pause.yaml` — Window contact sensor pause or speed reduction while a window is open.
+- **UI Reconfigure Flow & Password Reauth Flow (`custom_components/breezart/config_flow.py`, `custom_components/breezart/coordinator.py`, `tests/test_config_flow.py`)**:
+  - Added `async_step_reconfigure` so users can change the unit's IP address (`host`), `port`, `protocol`, `slave_id`, `password`, or `model` directly from the Home Assistant `⋮ → Reconfigure (Перенастроить)` menu without deleting and re-adding the integration (preserving entity history and automations).
+  - Added `async_step_reauth` and `async_step_reauth_confirm` triggered automatically when `BreezartDataCoordinator` raises `ConfigEntryAuthFailed` on a `PermissionError` (`VEPas_` wrong remote access password), allowing the user to update and verify the new password in the UI.
+  - Both flows release the running single-client socket (`async_release_connection()`) while probing the updated credentials/address.
 
 ## [1.3.0]
 
