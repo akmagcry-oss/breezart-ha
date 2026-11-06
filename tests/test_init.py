@@ -137,6 +137,7 @@ async def test_notification_toggle_from_options_applies_live(
 def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     """Verify manifest.json key order (hassfest), hacs.json keys, and CI workflow."""
     import json
+    import re
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
@@ -151,7 +152,7 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
         f"hassfest requires alphabetical keys after domain/name, got {keys[2:]}"
     )
 
-    # 2. hacs.json must only use allowed HACS keys (no iot_class)
+    # 2. hacs.json must only use allowed HACS keys (no iot_class) and declare a real HA minimum (>= 2024.11.0)
     allowed_hacs_keys = {
         "name",
         "content_in_root",
@@ -167,23 +168,39 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     hacs_raw = json.loads((root / "hacs.json").read_text(encoding="utf-8"))
     extra_hacs_keys = set(hacs_raw.keys()) - allowed_hacs_keys
     assert not extra_hacs_keys, f"Invalid keys in hacs.json: {extra_hacs_keys}"
+    ha_min_parts = tuple(int(p) for p in hacs_raw["homeassistant"].split("."))
+    assert ha_min_parts >= (2024, 11, 0), (
+        f"OptionsFlow requires Home Assistant >= 2024.11.0, got {hacs_raw['homeassistant']}"
+    )
 
-    # 3. GitHub Actions workflow must exist and include pytest, hassfest, and hacs validation
+    # 3. requirements_test.txt must pin pytest-homeassistant-custom-component to an exact version
+    req_text = (root / "requirements_test.txt").read_text(encoding="utf-8").strip()
+    assert re.search(
+        r"^pytest-homeassistant-custom-component==\d+\.\d+\.\d+$",
+        req_text,
+        re.MULTILINE,
+    ), f"requirements_test.txt must pin pytest-homeassistant-custom-component==X.Y.Z, got: {req_text}"
+
+    # 4. GitHub Actions workflow must exist, test on Python 3.13, and run pytest, hassfest, and hacs
     workflow_path = root / ".github" / "workflows" / "validate.yml"
     assert workflow_path.is_file(), ".github/workflows/validate.yml must exist"
     workflow_text = workflow_path.read_text(encoding="utf-8")
+    assert '"3.13"' in workflow_text
     assert "pytest" in workflow_text
     assert "hassfest" in workflow_text
     assert "hacs/action" in workflow_text
 
-    # 4. Version 1.4.0 and date-free CHANGELOG entry
-    assert manifest_raw["version"] == "1.4.0"
+    # 5. Dynamic version check: manifest version must be valid semver and match the top CHANGELOG section
+    version = manifest_raw["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"Invalid semver in manifest.json: {version}"
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [1.4.0]" in changelog
-    assert "## [1.3.0]" in changelog
-    assert changelog.index("## [1.4.0]") < changelog.index("## [1.3.0]") < changelog.index("## [1.2.4]")
+    headings = re.findall(r"^## \[([^\]]+)\]", changelog, flags=re.MULTILINE)
+    assert headings, "CHANGELOG.md must contain at least one '## [X.Y.Z]' release heading"
+    assert headings[0] == version, (
+        f"Top CHANGELOG.md heading '## [{headings[0]}]' does not match manifest.json version '{version}'"
+    )
 
-    # 5. Repository root must contain LICENSE file for HACS <Validation license>
+    # 6. Repository root must contain LICENSE file for HACS <Validation license>
     license_path = root / "LICENSE"
     assert license_path.is_file(), "LICENSE must exist in repository root for HACS validation"
     assert "MIT License" in license_path.read_text(encoding="utf-8")

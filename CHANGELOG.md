@@ -2,6 +2,21 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.4.1]
+
+### Fixed
+- **CI Python 3.13 & Home Assistant Version Matrix (`.github/workflows/validate.yml`, `requirements_test.txt`, `.github/dependabot.yml`, `hacs.json`, `README.md`)**:
+  - Pinned `pytest-homeassistant-custom-component==0.13.316` (Home Assistant `2026.2.3`) in `requirements_test.txt` and added `.github/dependabot.yml` for automated dependency PRs.
+  - Updated `.github/workflows/validate.yml` to run a `pytest` matrix against both the minimum supported version (**Home Assistant `2024.11.0`**, `pytest-homeassistant-custom-component==0.13.181`, Python `3.12`) and the latest pinned release (**Home Assistant `2026.2.3`**, Python `3.13`).
+  - Raised minimum `homeassistant` version in `hacs.json` and `README.md` from `2023.1.0` to `2024.11.0` (matching `OptionsFlow.config_entry` support).
+- **Dynamic Version Check in Metadata Test (`tests/test_init.py`)**:
+  - Removed hard-coded `"1.4.0"` version string from `test_hassfest_and_hacs_metadata_and_ci_workflow()`; the test now dynamically validates `manifest.json` semver against the top `CHANGELOG.md` release heading, `hacs.json` minimum version, and `requirements_test.txt` pin.
+- **Protocol Security, Boundary Validation & Reconfigure Registry Migration (`custom_components/breezart/coordinator.py`, `custom_components/breezart/config_flow.py`, `tests/`)**:
+  - Restricted `PermissionError` in `BreezartTCPClient._check_error()` strictly to `VEPas` (`ERR_PREFIX_WRONG_PASS`), raising `ValueError` for non-auth protocol errors (`VEFrm`, `VECd1`, `VECd2`, `VEDat`) so command/format errors do not falsely trigger `ConfigEntryAuthFailed` (Reauth Flow).
+  - Masked hex-encoded remote access passwords (`_mask_request()`) in `BreezartTCPClient` debug logs and `TimeoutError` messages.
+  - Added packet length validation on `VPr07` and `VSt07` replies, MBAP protocol ID (`0`) and length (`2..260`) validation in `BreezartModbusClient._transact()`, and automatic socket reconnection after optional Modbus VAV block timeouts.
+  - Added `_migrate_host_references()` in `BreezartConfigFlow.async_step_reconfigure` to migrate entity `unique_id`s, device identifiers, and Repairs issues when the controller IP/host is changed.
+
 ## [1.4.0]
 
 ### Added
