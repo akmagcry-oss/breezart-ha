@@ -176,11 +176,12 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     assert "hassfest" in workflow_text
     assert "hacs/action" in workflow_text
 
-    # 4. Version 1.3.0 and date-free CHANGELOG entry
-    assert manifest_raw["version"] == "1.3.0"
+    # 4. Version 1.4.0 and date-free CHANGELOG entry
+    assert manifest_raw["version"] == "1.4.0"
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [1.4.0]" in changelog
     assert "## [1.3.0]" in changelog
-    assert changelog.index("## [1.3.0]") < changelog.index("## [1.2.4]")
+    assert changelog.index("## [1.4.0]") < changelog.index("## [1.3.0]") < changelog.index("## [1.2.4]")
 
     # 5. Repository root must contain LICENSE file for HACS <Validation license>
     license_path = root / "LICENSE"
