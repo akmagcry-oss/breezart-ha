@@ -137,6 +137,7 @@ async def test_notification_toggle_from_options_applies_live(
 def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     """Verify manifest.json key order (hassfest), hacs.json keys, and CI workflow."""
     import json
+    import re
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
@@ -151,7 +152,9 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
         f"hassfest requires alphabetical keys after domain/name, got {keys[2:]}"
     )
 
-    # 2. hacs.json must only use allowed HACS keys (no iot_class)
+    # 2. hacs.json must only use allowed HACS keys (no iot_class) and declare a real HA minimum.
+    #    2024.12.0 is the first release that sets OptionsFlow.config_entry automatically;
+    #    CI runs the suite on it (tests/requirements_min.txt) and checks it matches hacs.json.
     allowed_hacs_keys = {
         "name",
         "content_in_root",
@@ -167,26 +170,40 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     hacs_raw = json.loads((root / "hacs.json").read_text(encoding="utf-8"))
     extra_hacs_keys = set(hacs_raw.keys()) - allowed_hacs_keys
     assert not extra_hacs_keys, f"Invalid keys in hacs.json: {extra_hacs_keys}"
+    ha_min_parts = tuple(int(p) for p in hacs_raw["homeassistant"].split("."))
+    assert ha_min_parts >= (2024, 12, 0), (
+        f"OptionsFlow requires Home Assistant >= 2024.12.0, got {hacs_raw['homeassistant']}"
+    )
 
-    # 3. GitHub Actions workflow must exist and include pytest, hassfest, and hacs validation
+    # 3. Both test requirement files must pin pytest-homeassistant-custom-component exactly
+    pin = re.compile(r"^pytest-homeassistant-custom-component==\d+\.\d+\.\d+$", re.MULTILINE)
+    for req_file in ("requirements_test.txt", "tests/requirements_min.txt"):
+        req_text = (root / req_file).read_text(encoding="utf-8")
+        assert pin.search(req_text), (
+            f"{req_file} must pin pytest-homeassistant-custom-component==X.Y.Z, got: {req_text}"
+        )
+
+    # 4. GitHub Actions workflow must exist, test latest and minimum HA, lint, and run hassfest and hacs
     workflow_path = root / ".github" / "workflows" / "validate.yml"
     assert workflow_path.is_file(), ".github/workflows/validate.yml must exist"
     workflow_text = workflow_path.read_text(encoding="utf-8")
     assert "pytest" in workflow_text
+    assert "requirements_test.txt" in workflow_text
+    assert "tests/requirements_min.txt" in workflow_text
+    assert "ruff check" in workflow_text
     assert "hassfest" in workflow_text
     assert "hacs/action" in workflow_text
 
-    # 4. Version consistency: manifest == newest CHANGELOG entry == docs/structure.md.
+    # 5. Version consistency: manifest == newest CHANGELOG entry == docs/structure.md.
     #    No hard-coded version here, so a release only edits the release files.
-    import re
-
     version = manifest_raw["version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"Invalid semver in manifest.json: {version}"
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     headings = re.findall(r"^## \[([^\]]+)\](.*)$", changelog, flags=re.MULTILINE)
-    assert headings, "CHANGELOG.md has no '## [x.y.z]' entries"
+    assert headings, "CHANGELOG.md must contain at least one '## [X.Y.Z]' release heading"
     versions = [v for v, _ in headings]
     assert versions[0] == version, (
-        f"manifest.json version {version} must be the newest CHANGELOG entry, found {versions[0]}"
+        f"Top CHANGELOG.md heading '## [{versions[0]}]' does not match manifest.json version '{version}'"
     )
     parsed = [tuple(int(p) for p in v.split(".")) for v in versions]
     assert parsed == sorted(parsed, reverse=True) and len(set(parsed)) == len(parsed), (
@@ -196,7 +213,7 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     structure = (root / "docs" / "structure.md").read_text(encoding="utf-8")
     assert f"(v{version})" in structure, f"docs/structure.md must mention v{version}"
 
-    # 5. Repository root must contain LICENSE file for HACS <Validation license>
+    # 6. Repository root must contain LICENSE file for HACS <Validation license>
     license_path = root / "LICENSE"
     assert license_path.is_file(), "LICENSE must exist in repository root for HACS validation"
     assert "MIT License" in license_path.read_text(encoding="utf-8")
