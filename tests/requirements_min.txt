@@ -4,4 +4,4 @@
 # release that sets OptionsFlow.config_entry automatically.
 pytest-homeassistant-custom-component==0.13.190
 # josepy 2.x removed ComparableX509, which acme (via hass-nabucasa) needs here.
-josepy<2
+josepy<3
