@@ -114,7 +114,6 @@ from .const import (
     KEY_FIRMWARE_VER,
     KEY_HAS_COOLER,
     KEY_HAS_HUMIDIFIER,
-    KEY_HAS_VAV,
     KEY_HEATER_EFFICIENCY,
     KEY_HEATER_THERMAL_POWER,
     KEY_HUMIDITY,
@@ -161,6 +160,7 @@ from .const import (
     MANUFACTURER,
     MAX_ALLOWED_VAV_ZONES,
     MAX_UINT16,
+    MOBILE_APP_SERVICE_PREFIX,
     MODBUS_ALARM_BIT_FILTER,
     MODBUS_ALARM_BIT_FREEZE,
     MODBUS_ALARM_BIT_OVERHEAT,
@@ -174,7 +174,6 @@ from .const import (
     MODBUS_HC_COOL,
     MODBUS_HC_HEAT,
     MODBUS_HC_TO_CMD_MODE,
-    MODBUS_HC_VENT,
     MODBUS_HR_BLOCK_COUNT,
     MODBUS_HR_BLOCK_START,
     MODBUS_HR_FAN_SPEED,
@@ -221,7 +220,6 @@ from .const import (
     MODE_OFF,
     MODE_VENT,
     MODEL_CUSTOM,
-    MOBILE_APP_SERVICE_PREFIX,
     NO_DATA_BYTE,
     NO_DATA_HEX,
     NOTIFICATION_SETTING_KEYS,
@@ -269,7 +267,6 @@ from .const import (
     SIGN_BIT_OFFSET,
     SIGNED_BYTE_OFFSET,
     SIGNED_BYTE_THRESHOLD,
-    STATE_KEY_OFF,
     STATE_KEY_UNKNOWN,
     STATE_UPDATE_INTERVAL,
     TEMP_DIVISOR,
@@ -627,7 +624,7 @@ class BreezartTCPClient:
                 timeout=self.timeout,
             )
             _LOGGER.info("Connected to Breezart (Native TCP) at %s:%d", self.host, self.port)
-        except (OSError, asyncio.TimeoutError) as err:
+        except (TimeoutError, OSError) as err:
             _LOGGER.error("Failed to connect to Breezart (Native TCP): %s", err)
             raise
 
@@ -667,7 +664,7 @@ class BreezartTCPClient:
                     self._reader.read(READ_BUFFER_SIZE - len(raw)),
                     timeout=READ_DELAY_SECONDS,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -686,7 +683,7 @@ class BreezartTCPClient:
                 self._writer.write(request.encode())
                 await self._writer.drain()
                 raw = await self._read_response()
-            except asyncio.TimeoutError as err:
+            except TimeoutError as err:
                 # A late reply would be read as the answer to the next request.
                 self._drop_connection()
                 raise TimeoutError(f"No response for request: {masked_req}") from err
@@ -1065,7 +1062,7 @@ class BreezartModbusClient:
                 self.port,
                 self.slave_id,
             )
-        except (OSError, asyncio.TimeoutError) as err:
+        except (TimeoutError, OSError) as err:
             _LOGGER.error("Failed to connect to Breezart (Modbus TCP): %s", err)
             raise
 

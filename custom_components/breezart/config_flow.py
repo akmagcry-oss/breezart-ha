@@ -63,7 +63,6 @@ from .const import (
     NOTIFICATION_SETTING_KEYS,
     PROTOCOL_OPTIONS,
     STEP_INIT,
-    STEP_REAUTH,
     STEP_REAUTH_CONFIRM,
     STEP_RECONFIGURE,
     STEP_USER,
@@ -346,6 +345,7 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entity_registry as er,
             issue_registry as ir,
         )
+
         from .const import REPAIR_ISSUE_KEYS
 
         old_prefix = f"{DOMAIN}_{old_host}_"

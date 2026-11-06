@@ -214,7 +214,7 @@ async def test_breezart_modbus(
         await writer.wait_closed()
         print(f"✓ {msg['closed']}")
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print(f"✗ {msg['conn_timeout']}")
         return False
     except ConnectionRefusedError:
@@ -258,7 +258,7 @@ async def test_breezart_native(
                 print(f"✓ {msg['received'].format(response=response)}")
             else:
                 print(f"✗ {msg['no_data']}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print(f"✗ {msg['timeout']}")
 
         writer.close()
@@ -266,7 +266,7 @@ async def test_breezart_native(
         print(f"✓ {msg['closed']}")
         return True
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print(f"✗ {msg['conn_timeout']}")
         return False
     except ConnectionRefusedError:

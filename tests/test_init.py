@@ -191,8 +191,8 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
 
 def test_blueprints_valid_and_idempotent_install() -> None:
     """Verify bundled Home Assistant automation blueprints and idempotent installer."""
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     from custom_components.breezart import (
         BLUEPRINT_FILENAMES,
