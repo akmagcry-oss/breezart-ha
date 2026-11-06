@@ -282,7 +282,10 @@ async def test_reconfigure_flow_updates_host_and_reloads(
     migrated_entry = ent_reg.async_get(climate_entity_id)
     assert migrated_entry is not None
     assert migrated_entry.unique_id == f"{DOMAIN}_192.168.1.200_climate"
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, "192.168.1.200")}) is not None
+    assert any(
+        (DOMAIN, "192.168.1.200") in dev.identifiers
+        for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+    )
     mock_reload.assert_called_once_with(entry.entry_id)
 
 
