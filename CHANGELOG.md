@@ -5,9 +5,9 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 ## [1.4.1]
 
 ### Fixed
-- **CI Python 3.13 & Home Assistant Version Matrix (`.github/workflows/validate.yml`, `requirements_test.txt`, `.github/dependabot.yml`, `hacs.json`, `README.md`)**:
-  - Pinned `pytest-homeassistant-custom-component==0.13.316` (Home Assistant `2026.2.3`) in `requirements_test.txt` and added `.github/dependabot.yml` for automated dependency PRs.
-  - Updated `.github/workflows/validate.yml` to run a `pytest` matrix against both the minimum supported version (**Home Assistant `2024.11.0`**, `pytest-homeassistant-custom-component==0.13.181`, Python `3.12`) and the latest pinned release (**Home Assistant `2026.2.3`**, Python `3.13`).
+- **CI Python 3.13 & Pinned Test Dependencies (`.github/workflows/validate.yml`, `requirements_test.txt`, `.github/dependabot.yml`, `hacs.json`, `README.md`)**:
+  - Updated `.github/workflows/validate.yml` to run on Python `3.13` and pinned `pytest-homeassistant-custom-component==0.13.316` (Home Assistant `2026.2.3`) in `requirements_test.txt`.
+  - Added `.github/dependabot.yml` for automated weekly dependency update PRs.
   - Raised minimum `homeassistant` version in `hacs.json` and `README.md` from `2023.1.0` to `2024.11.0` (matching `OptionsFlow.config_entry` support).
 - **Dynamic Version Check in Metadata Test (`tests/test_init.py`)**:
   - Removed hard-coded `"1.4.0"` version string from `test_hassfest_and_hacs_metadata_and_ci_workflow()`; the test now dynamically validates `manifest.json` semver against the top `CHANGELOG.md` release heading, `hacs.json` minimum version, and `requirements_test.txt` pin.
