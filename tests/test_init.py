@@ -176,12 +176,25 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     assert "hassfest" in workflow_text
     assert "hacs/action" in workflow_text
 
-    # 4. Version 1.4.0 and date-free CHANGELOG entry
-    assert manifest_raw["version"] == "1.4.0"
+    # 4. Version consistency: manifest == newest CHANGELOG entry == docs/structure.md.
+    #    No hard-coded version here, so a release only edits the release files.
+    import re
+
+    version = manifest_raw["version"]
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [1.4.0]" in changelog
-    assert "## [1.3.0]" in changelog
-    assert changelog.index("## [1.4.0]") < changelog.index("## [1.3.0]") < changelog.index("## [1.2.4]")
+    headings = re.findall(r"^## \[([^\]]+)\](.*)$", changelog, flags=re.MULTILINE)
+    assert headings, "CHANGELOG.md has no '## [x.y.z]' entries"
+    versions = [v for v, _ in headings]
+    assert versions[0] == version, (
+        f"manifest.json version {version} must be the newest CHANGELOG entry, found {versions[0]}"
+    )
+    parsed = [tuple(int(p) for p in v.split(".")) for v in versions]
+    assert parsed == sorted(parsed, reverse=True) and len(set(parsed)) == len(parsed), (
+        f"CHANGELOG entries must be unique and newest first: {versions}"
+    )
+    assert all(not rest.strip() for _, rest in headings), "CHANGELOG headings must not carry dates"
+    structure = (root / "docs" / "structure.md").read_text(encoding="utf-8")
+    assert f"(v{version})" in structure, f"docs/structure.md must mention v{version}"
 
     # 5. Repository root must contain LICENSE file for HACS <Validation license>
     license_path = root / "LICENSE"
