@@ -260,6 +260,7 @@ async def test_reconfigure_flow_updates_host_and_reloads(
                 CONF_MODEL: "1000_lux",
             },
         )
+        await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
@@ -335,6 +336,7 @@ async def test_reauth_flow_updates_password_and_reloads(
             result["flow_id"],
             {CONF_PASSWORD: "54321"},
         )
+        await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"

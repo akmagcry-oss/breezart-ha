@@ -33,6 +33,7 @@ from .const import (
     CONF_VAV_ZONES,
     CONFIG_FLOW_VERSION,
     DATA_COORDINATOR,
+    DATA_RELOAD_SNAPSHOT,
     DEFAULT_HOST,
     DEFAULT_MODBUS_PORT,
     DEFAULT_MODEL,
@@ -328,6 +329,25 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return entry_data[DATA_COORDINATOR].async_release_connection()
         return nullcontext()
 
+    async def _async_update_and_reload_entry(
+        self, entry: config_entries.ConfigEntry, **update_kwargs: Any
+    ) -> None:
+        """Update config entry and reload it exactly once.
+
+        When the entry is loaded, `entry.add_update_listener(async_reload_entry)`
+        is already attached and `async_update_entry` schedules `async_reload_entry`,
+        which calls `async_reload(entry.entry_id)`. Clearing `DATA_RELOAD_SNAPSHOT`
+        ensures the listener reloads even if the user submitted unchanged values.
+        When the entry is not loaded, no update listener is attached, so we call
+        `async_reload(entry.entry_id)` directly.
+        """
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if entry_data is not None:
+            entry_data[DATA_RELOAD_SNAPSHOT] = None
+        self.hass.config_entries.async_update_entry(entry, **update_kwargs)
+        if entry_data is None:
+            await self.hass.config_entries.async_reload(entry.entry_id)
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -394,14 +414,13 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if CONF_MODEL in updated_options:
                     updated_options[CONF_MODEL] = model
 
-                self.hass.config_entries.async_update_entry(
+                await self._async_update_and_reload_entry(
                     entry,
                     unique_id=new_unique_id,
                     title=new_title,
                     data=updated_data,
                     options=updated_options,
                 )
-                await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason=ABORT_RECONFIGURE_SUCCESSFUL)
 
             current = {**current, **user_input}
@@ -496,11 +515,10 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during reauth test: %s", err)
                 errors["base"] = ERR_UNKNOWN
             else:
-                self.hass.config_entries.async_update_entry(
+                await self._async_update_and_reload_entry(
                     entry,
                     data={**entry.data, CONF_PASSWORD: password},
                 )
-                await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason=ABORT_REAUTH_SUCCESSFUL)
 
         default_pwd = (
