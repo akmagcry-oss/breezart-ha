@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Check version and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check tag matches manifest.json and CHANGELOG.md
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(jq -r .version custom_components/breezart/manifest.json)
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::Tag v$tag does not match manifest.json version $manifest"
+            exit 1
+          fi
+          awk -v ver="$tag" '
+            $0 == "## [" ver "]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          if ! grep -q '[^[:space:]]' release_notes.md; then
+            echo "::error::CHANGELOG.md has no entry for ## [$tag]"
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it as is."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "v${{ steps.version.outputs.version }}" \
+              --notes-file release_notes.md \
+              --verify-tag
+          fi
