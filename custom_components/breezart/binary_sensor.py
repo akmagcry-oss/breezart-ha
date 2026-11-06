@@ -1,6 +1,8 @@
 """Binary sensor platform for Breezart integration."""
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
@@ -13,6 +15,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ATTR_HAS_VAV,
+    ATTR_VAV_ZONES,
+    ATTR_ZONE_SPEEDS,
     DATA_COORDINATOR,
     DOMAIN,
     KEY_CHANGE_FILTER,
@@ -22,6 +27,8 @@ from .const import (
     KEY_IS_WARN_ERR,
     KEY_POWER,
     KEY_SCHEDULE_ACTIVE,
+    KEY_VAV_MODE,
+    KEY_VAV_ZONES,
 )
 from .coordinator import BreezartDataCoordinator
 
@@ -57,6 +64,39 @@ class BreezartBinarySensor(CoordinatorEntity[BreezartDataCoordinator], BinarySen
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return self.coordinator.device_info
+
+
+class BreezartVavBinarySensor(BreezartBinarySensor):
+    """Diagnostic binary sensor indicating active VAV zoning mode and per-zone speed attributes."""
+
+    def __init__(self, coordinator: BreezartDataCoordinator) -> None:
+        """Initialize the VAV mode binary sensor."""
+        super().__init__(
+            coordinator,
+            KEY_VAV_MODE,
+            None,
+            EntityCategory.DIAGNOSTIC,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return VAV hardware support flag, configured zone count, and current zone speeds."""
+        client = self.coordinator.client
+        zones_raw = (
+            self.coordinator.data.get(KEY_VAV_ZONES)
+            if self.coordinator.data
+            else None
+        )
+        zone_speeds = (
+            {int(k): int(v) for k, v in zones_raw.items()}
+            if isinstance(zones_raw, dict)
+            else {}
+        )
+        return {
+            ATTR_HAS_VAV: bool(getattr(client, "has_vav", False)),
+            ATTR_VAV_ZONES: int(getattr(client, "vav_zones", 0)),
+            ATTR_ZONE_SPEEDS: zone_speeds,
+        }
 
 
 async def async_setup_entry(
@@ -112,5 +152,6 @@ async def async_setup_entry(
                 None,
                 EntityCategory.DIAGNOSTIC,
             ),
+            BreezartVavBinarySensor(coordinator),
         ]
     )

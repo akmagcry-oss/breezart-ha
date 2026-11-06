@@ -338,3 +338,47 @@ async def test_target_humidity_entities_and_optimistic_rollback(
 
     assert hass.states.get(climate_id).attributes["humidity"] == 45.0
 
+
+async def test_vav_entities_and_zone_control(
+    hass: HomeAssistant, config_entry, fake_client, mock_create_client
+) -> None:
+    """When VAV is active on the controller, VAV binary sensor and zone number entities work."""
+    from custom_components.breezart.const import (
+        ATTR_HAS_VAV,
+        ATTR_VAV_ZONES,
+        ATTR_ZONE_SPEEDS,
+        KEY_VAV_MODE,
+        KEY_VAV_ZONES,
+        vav_zone_key,
+    )
+
+    fake_client.has_vav = True
+    fake_client.vav_zones = 3
+    fake_client.state[KEY_VAV_MODE] = True
+    fake_client.sensors[KEY_VAV_ZONES] = {1: 4, 2: 7, 3: 0}
+    fake_client.sensors[vav_zone_key(1)] = 4
+    fake_client.sensors[vav_zone_key(2)] = 7
+    fake_client.sensors[vav_zone_key(3)] = 0
+
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    vav_bin_id = entity_id_for(hass, "binary_sensor", KEY_VAV_MODE)
+    vav_bin_state = hass.states.get(vav_bin_id)
+    assert vav_bin_state.state == "on"
+    assert vav_bin_state.attributes[ATTR_HAS_VAV] is True
+    assert vav_bin_state.attributes[ATTR_VAV_ZONES] == 3
+    assert vav_bin_state.attributes[ATTR_ZONE_SPEEDS] == {1: 4, 2: 7, 3: 0}
+
+    z2_id = entity_id_for(hass, "number", vav_zone_key(2))
+    assert hass.states.get(z2_id).state == "7.0"
+
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": z2_id, "value": 6},
+        blocking=True,
+    )
+    fake_client.set_vav_zone_speed.assert_awaited_once_with(2, 6)
+
+

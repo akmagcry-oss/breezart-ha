@@ -33,6 +33,7 @@ from .const import (
     BIT_HIGH_BYTE_START,
     BIT_IS_COOLER,
     BIT_IS_HUMIDIFIER,
+    BIT_IS_VAV,
     BIT_LOW_BYTE_END,
     BIT_LOW_BYTE_START,
     BIT_MODE_END,
@@ -49,6 +50,9 @@ from .const import (
     BIT_SPEED_TGT_START,
     BIT_UNIT_STATE_END,
     BIT_UNIT_STATE_START,
+    BIT_VAV_MODE,
+    BIT_VAV_ZONES_END,
+    BIT_VAV_ZONES_START,
     BIT_WARN_ERR,
     BIT_WHO_ACTIVATE_SCEN_END,
     BIT_WHO_ACTIVATE_SCEN_START,
@@ -72,6 +76,7 @@ from .const import (
     DEFAULT_PROTOCOL,
     DEFAULT_SLAVE_ID,
     DEFAULT_TIMEOUT,
+    DEFAULT_VAV_ZONES,
     DELIMITER,
     DISCOVERY_CONCURRENCY,
     DISCOVERY_CONNECT_TIMEOUT,
@@ -105,6 +110,7 @@ from .const import (
     KEY_FIRMWARE_VER,
     KEY_HAS_COOLER,
     KEY_HAS_HUMIDIFIER,
+    KEY_HAS_VAV,
     KEY_HUMIDITY,
     KEY_HUMIDITY_OUTDOOR,
     KEY_HUMIDITY_ROOM,
@@ -142,8 +148,11 @@ from .const import (
     KEY_TEMPERATURE,
     KEY_TEMPERATURE_TARGET,
     KEY_UNIT_STATE,
+    KEY_VAV_MODE,
+    KEY_VAV_ZONES,
     KEY_VOC,
     MANUFACTURER,
+    MAX_ALLOWED_VAV_ZONES,
     MAX_UINT16,
     MODBUS_ALARM_BIT_FILTER,
     MODBUS_ALARM_BIT_FREEZE,
@@ -167,6 +176,7 @@ from .const import (
     MODBUS_HR_POWER_STATE,
     MODBUS_HR_SCENARIO,
     MODBUS_HR_TEMP_TARGET,
+    MODBUS_HR_VAV_BLOCK_START,
     MODBUS_INVALID_VALUES,
     MODBUS_IR_FAN_BLOCK_COUNT,
     MODBUS_IR_FAN_BLOCK_START,
@@ -193,6 +203,7 @@ from .const import (
     MODBUS_STATUS_BIT_POWER,
     MODBUS_STATUS_BIT_SCENARIO,
     MODBUS_STATUS_BIT_TRANSITION,
+    MODBUS_STATUS_BIT_VAV,
     MODBUS_STATUS_BIT_WARN,
     MODBUS_STATUS_BIT_WINTER,
     MODBUS_WRITE_SINGLE_PDU_LEN,
@@ -231,15 +242,18 @@ from .const import (
     REQ_GET_PROPERTIES,
     REQ_GET_SENSORS,
     REQ_GET_STATE,
+    REQ_GET_VAV_ZONES,
     REQ_SET_FAN_SPEED,
     REQ_SET_HUMIDITY,
     REQ_SET_MODE,
     REQ_SET_POWER,
     REQ_SET_TEMP,
+    REQ_SET_VAV_ZONE,
     RESP_OK,
     RESP_PROPERTIES,
     RESP_SENSORS,
     RESP_STATE,
+    RESP_VAV_ZONES_PREFIXES,
     SCENARIO_OFF,
     SCENARIO_STANDBY,
     SENSORS_UPDATE_INTERVAL,
@@ -287,6 +301,7 @@ from .const import (
     WHO_ACTIVATE_SCEN_MAP,
     get_model_preset,
     translate_value,
+    vav_zone_key,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -467,6 +482,33 @@ def decode_modbus_schedule_state(
     )
 
 
+def decode_vav_properties(misc_hex: str) -> tuple[bool, int]:
+    """Decode VAV support flag (bit 15) and MaxNVAV zone count (bits 8..12) from VPr07 misc word."""
+    has_vav = bool(_parse_bits(misc_hex, BIT_IS_VAV))
+    raw_zones = _parse_bits(misc_hex, BIT_VAV_ZONES_START, BIT_VAV_ZONES_END)
+    vav_zones = raw_zones if (has_vav and 2 <= raw_zones <= MAX_ALLOWED_VAV_ZONES) else 0
+    return has_vav, vav_zones
+
+
+def decode_vav_zones_response(parts: list[str], num_zones: int) -> dict[int, int]:
+    """Decode VZLst / VZVAV response parts into a 1-indexed {zone: speed} dictionary."""
+    if not parts or parts[0] not in RESP_VAV_ZONES_PREFIXES or num_zones <= 0:
+        return {}
+    zones: dict[int, int] = {}
+    max_z = min(num_zones, MAX_ALLOWED_VAV_ZONES, len(parts) - 1)
+    for z in range(1, max_z + 1):
+        raw_hex = parts[z]
+        if raw_hex.lower() == NO_DATA_HEX:
+            continue
+        try:
+            val = _hex_to_dec(raw_hex)
+        except ValueError:
+            continue
+        if val == NO_DATA_BYTE:
+            continue
+        zones[z] = val
+    return zones
+
 
 class ModbusExceptionError(ValueError):
     """The device answered with a Modbus exception frame (the connection is still in sync)."""
@@ -493,6 +535,7 @@ class BreezartTCPClient:
         speed_max: int | None = None,
         temp_min: int | None = None,
         temp_max: int | None = None,
+        vav_zones: int | None = None,
     ) -> None:
         """Initialize the native TCP client with model preset defaults and optional user bounds."""
         self.host = host
@@ -508,6 +551,9 @@ class BreezartTCPClient:
         self._user_temp_min: int | None = int(temp_min) if temp_min is not None else None
         self._user_temp_max: int | None = int(temp_max) if temp_max is not None else None
         self._user_speed_max: int | None = int(speed_max) if speed_max is not None else None
+        self._user_vav_zones: int | None = (
+            int(vav_zones) if vav_zones is not None and int(vav_zones) > 0 else None
+        )
 
         self.temp_min: int = (
             self._user_temp_min if self._user_temp_min is not None else int(preset["temp_min"])
@@ -523,6 +569,11 @@ class BreezartTCPClient:
         self.humid_max: int = DEFAULT_HUMID_MAX
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
+        self.vav_zones: int = (
+            self._user_vav_zones if self._user_vav_zones is not None else DEFAULT_VAV_ZONES
+        )
+        self.has_vav: bool = bool(preset.get("has_vav", False)) or self.vav_zones > 0
+        self._vav_poll_supported: bool = True
         self.firmware_ver: int | str | None = None
         self.protocol_ver: str | None = None
         self._last_temp_supply: float | None = None
@@ -677,18 +728,28 @@ class BreezartTCPClient:
             self.has_cooler = bool(preset["has_cooler"]) or hw_cooler
             self.has_humidifier = bool(preset["has_humidifier"]) or hw_humid
 
+        hw_has_vav, hw_vav_zones = decode_vav_properties(parts[VPR07_IDX_MISC])
+        if self._user_vav_zones is not None:
+            self.vav_zones = self._user_vav_zones
+            self.has_vav = True
+        else:
+            self.has_vav = bool(preset.get("has_vav", False)) or hw_has_vav or hw_vav_zones > 0
+            self.vav_zones = hw_vav_zones
+
         sub = _parse_bits(parts[VPR07_IDX_PROT], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
         major = _parse_bits(parts[VPR07_IDX_PROT], BIT_HIGH_BYTE_START, BIT_HIGH_BYTE_END)
         self.protocol_ver = f"{major}.{sub}"
         self.firmware_ver = _hex_to_dec(parts[VPR07_IDX_FW])
 
         _LOGGER.info(
-            "Breezart (%s) properties: T=%d..%d°C, Speed=%d..%d, fw=%s, proto=%s",
+            "Breezart (%s) properties: T=%d..%d°C, Speed=%d..%d, VAV=%s (%d zones), fw=%s, proto=%s",
             self.model,
             self.temp_min,
             self.temp_max,
             self.speed_min,
             self.speed_max,
+            self.has_vav,
+            self.vav_zones,
             self.firmware_ver,
             self.protocol_ver,
         )
@@ -711,6 +772,7 @@ class BreezartTCPClient:
 
         unit_state = _parse_bits(parts[VST07_IDX_MODE], BIT_UNIT_STATE_START, BIT_UNIT_STATE_END)
         mode = _parse_bits(parts[VST07_IDX_MODE], BIT_MODE_START, BIT_MODE_END)
+        vav_mode = bool(_parse_bits(parts[VST07_IDX_MODE], BIT_VAV_MODE))
 
         tempr_raw = _parse_bits(parts[VST07_IDX_TEMPR], BIT_LOW_BYTE_START, BIT_LOW_BYTE_END)
         tempr = (
@@ -783,10 +845,11 @@ class BreezartTCPClient:
             KEY_SCHEDULE_ACTIVE: sched.schedule_active,
             KEY_SCENARIO_SOURCE: sched.activation_source,
             KEY_CONTROLLER_TIME: sched.controller_time,
+            KEY_VAV_MODE: vav_mode,
         }
 
     async def get_sensors(self) -> dict[str, Any]:
-        """Read sensor values (VSens)."""
+        """Read sensor values (VSens) and VAV zone speeds (VZLst) when VAV is enabled."""
         req = self._build_request(REQ_GET_SENSORS)
         parts = await self._send(req)
 
@@ -817,7 +880,7 @@ class BreezartTCPClient:
         self._last_temp_outdoor = temp_outdoor
         self._last_temp_water = temp_water
 
-        return {
+        result: dict[str, Any] = {
             KEY_TEMP_SUPPLY: temp_supply,
             KEY_HUMIDITY_SUPPLY: _get(VSENS_IDX_HUMID_SUPPLY),
             KEY_TEMP_ROOM: _get(VSENS_IDX_TEMP_ROOM, is_temp=True),
@@ -833,6 +896,20 @@ class BreezartTCPClient:
             KEY_FILTER3_POLLUTION: _get(VSENS_IDX_FILTER3),
             KEY_FILTER4_POLLUTION: _get(VSENS_IDX_FILTER4),
         }
+
+        if self.has_vav and self.vav_zones > 0 and self._vav_poll_supported:
+            try:
+                vav_parts = await self._send(self._build_request(REQ_GET_VAV_ZONES))
+                zones_map = decode_vav_zones_response(vav_parts, self.vav_zones)
+                if zones_map:
+                    result[KEY_VAV_ZONES] = zones_map
+                    for z, z_speed in zones_map.items():
+                        result[vav_zone_key(z)] = z_speed
+            except (PermissionError, ValueError) as err:
+                self._vav_poll_supported = False
+                _LOGGER.debug("VAV zone list (VZLst) not supported by unit: %s", err)
+
+        return result
 
     async def set_power(self, on: bool) -> None:
         """Turn device on or off (VWPwr)."""
@@ -864,6 +941,17 @@ class BreezartTCPClient:
         if not parts or parts[0] != RESP_OK:
             raise ValueError(f"Unexpected set_fan_speed response: {parts}")
 
+    async def set_vav_zone_speed(self, zone: int, speed: int) -> None:
+        """Set VAV zone fan speed (VWZSp). Low 5 bits = zone (1..20), high byte = speed (0..speed_max)."""
+        max_z = self.vav_zones if self.vav_zones > 0 else MAX_ALLOWED_VAV_ZONES
+        clamped_zone = max(1, min(max_z, int(zone)))
+        clamped_speed = max(0, min(self.speed_max, int(speed)))
+        data = ((clamped_speed & 0xFF) << 8) | (clamped_zone & 0x1F)
+        req = self._build_request(REQ_SET_VAV_ZONE, data)
+        parts = await self._send(req)
+        if not parts or parts[0] != RESP_OK:
+            raise ValueError(f"Unexpected set_vav_zone_speed response: {parts}")
+
     async def set_mode(self, mode: int) -> None:
         """Set work mode (VWFtr). 1=Heat, 2=Cool, 3=Auto, 4=Vent."""
         req = self._build_request(REQ_SET_MODE, mode)
@@ -888,6 +976,7 @@ class BreezartModbusClient:
         speed_max: int | None = None,
         temp_min: int | None = None,
         temp_max: int | None = None,
+        vav_zones: int | None = None,
     ) -> None:
         """Initialize the Modbus TCP client with model preset defaults and optional user bounds."""
         self.host = host
@@ -911,6 +1000,9 @@ class BreezartModbusClient:
         self._user_temp_min: int | None = int(temp_min) if temp_min is not None else None
         self._user_temp_max: int | None = int(temp_max) if temp_max is not None else None
         self._user_speed_max: int | None = int(speed_max) if speed_max is not None else None
+        self._user_vav_zones: int | None = (
+            int(vav_zones) if vav_zones is not None and int(vav_zones) > 0 else None
+        )
 
         self.temp_min: int = (
             self._user_temp_min if self._user_temp_min is not None else int(preset["temp_min"])
@@ -926,6 +1018,10 @@ class BreezartModbusClient:
         self.humid_max: int = DEFAULT_HUMID_MAX
         self.has_cooler: bool = bool(preset["has_cooler"])
         self.has_humidifier: bool = bool(preset["has_humidifier"])
+        self.vav_zones: int = (
+            self._user_vav_zones if self._user_vav_zones is not None else DEFAULT_VAV_ZONES
+        )
+        self.has_vav: bool = bool(preset.get("has_vav", False)) or self.vav_zones > 0
         self.firmware_ver: int | str | None = None
         self.protocol_ver: str | None = f"Modbus TCP (ID={self.slave_id})"
 
@@ -1360,6 +1456,7 @@ class BreezartModbusClient:
             status_high=status_high,
             hr_scen_reg=hr_scen_reg,
         )
+        vav_mode = bool(status_low & (1 << MODBUS_STATUS_BIT_VAV)) or self.has_vav
 
         return {
             KEY_POWER: power,
@@ -1391,10 +1488,11 @@ class BreezartModbusClient:
             KEY_SCHEDULE_ACTIVE: sched.schedule_active,
             KEY_SCENARIO_SOURCE: sched.activation_source,
             KEY_CONTROLLER_TIME: sched.controller_time,
+            KEY_VAV_MODE: vav_mode,
         }
 
     async def get_sensors(self) -> dict[str, Any]:
-        """Read JL204c7 physical sensors from Input[50..71], [10001..10004], and [12005]."""
+        """Read JL204c7 physical sensors from Input[50..71], [10001..10004], [12005], and VAV Holding[100..]."""
         sensors_ir = await self._read_registers(
             MODBUS_FC_READ_INPUT,
             MODBUS_IR_SENSORS_BLOCK_START,
@@ -1445,7 +1543,7 @@ class BreezartModbusClient:
         if f2_ir is not None and f2_ir[0] not in MODBUS_INVALID_VALUES:
             filter2_pollution = round(f2_ir[0] / MODBUS_PERCENT_MULTIPLIER, 1)
 
-        return {
+        result: dict[str, Any] = {
             KEY_TEMP_SUPPLY: temp_supply,
             KEY_HUMIDITY_SUPPLY: humidity_supply,
             KEY_TEMP_ROOM: temp_room,
@@ -1461,6 +1559,51 @@ class BreezartModbusClient:
             KEY_FILTER3_POLLUTION: None,
             KEY_FILTER4_POLLUTION: None,
         }
+
+        if (
+            self.has_vav
+            and self.vav_zones > 0
+            and MODBUS_HR_VAV_BLOCK_START not in self._unsupported_blocks
+        ):
+            count = min(self.vav_zones, MAX_ALLOWED_VAV_ZONES)
+            try:
+                vav_hr = await self._read_registers(
+                    MODBUS_FC_READ_HOLDING, MODBUS_HR_VAV_BLOCK_START, count
+                )
+                zones_map: dict[int, int] = {}
+                for idx, raw_val in enumerate(vav_hr, start=1):
+                    if raw_val in MODBUS_INVALID_VALUES:
+                        continue
+                    z_speed = (
+                        0
+                        if raw_val == 0
+                        else max(
+                            self.speed_min,
+                            min(
+                                self.speed_max,
+                                round((raw_val / MODBUS_MAX_PERCENT_RAW) * self.speed_max),
+                            ),
+                        )
+                    )
+                    zones_map[idx] = z_speed
+                    result[vav_zone_key(idx)] = z_speed
+                if zones_map:
+                    result[KEY_VAV_ZONES] = zones_map
+                self._optional_failures.pop(MODBUS_HR_VAV_BLOCK_START, None)
+            except ModbusExceptionError as err:
+                definitive = err.code in (
+                    MODBUS_EXC_ILLEGAL_FUNCTION,
+                    MODBUS_EXC_ILLEGAL_DATA_ADDRESS,
+                )
+                self._record_optional_failure(
+                    MODBUS_HR_VAV_BLOCK_START, "VAV zones block", err, definitive=definitive
+                )
+            except Exception as err:
+                self._record_optional_failure(
+                    MODBUS_HR_VAV_BLOCK_START, "VAV zones block", err, definitive=False
+                )
+
+        return result
 
     async def set_power(self, on: bool) -> None:
         """Turn device on or off via Holding[3] (on_off)."""
@@ -1482,6 +1625,18 @@ class BreezartModbusClient:
         clamped = max(self.speed_min, min(self.speed_max, int(speed)))
         raw_pct_100 = int(round((clamped / self.speed_max) * MODBUS_MAX_PERCENT_RAW))
         await self._write_register(MODBUS_HR_FAN_SPEED, raw_pct_100)
+
+    async def set_vav_zone_speed(self, zone: int, speed: int) -> None:
+        """Set VAV zone fan speed via Holding[100 + zone - 1] (% x 100)."""
+        max_z = self.vav_zones if self.vav_zones > 0 else MAX_ALLOWED_VAV_ZONES
+        clamped_zone = max(1, min(max_z, int(zone)))
+        clamped_speed = max(0, min(self.speed_max, int(speed)))
+        raw_pct_100 = (
+            0
+            if clamped_speed == 0
+            else int(round((clamped_speed / self.speed_max) * MODBUS_MAX_PERCENT_RAW))
+        )
+        await self._write_register(MODBUS_HR_VAV_BLOCK_START + clamped_zone - 1, raw_pct_100)
 
     async def set_mode(self, mode: int) -> None:
         """Set work mode via Holding[7] (mode_hc: 0=Vent, 1=Heat, 2=Cool, 3=Auto)."""
@@ -1518,6 +1673,7 @@ def create_breezart_client(
     speed_max: int | None = None,
     temp_min: int | None = None,
     temp_max: int | None = None,
+    vav_zones: int | None = None,
 ) -> BreezartClientType:
     """Create the appropriate Breezart client (Modbus TCP on 502 or Native TCP on 1560)."""
     if protocol == PROTOCOL_MODBUS_TCP or (
@@ -1532,6 +1688,7 @@ def create_breezart_client(
             speed_max=speed_max,
             temp_min=temp_min,
             temp_max=temp_max,
+            vav_zones=vav_zones,
         )
     return BreezartTCPClient(
         host=host,
@@ -1542,6 +1699,7 @@ def create_breezart_client(
         speed_max=speed_max,
         temp_min=temp_min,
         temp_max=temp_max,
+        vav_zones=vav_zones,
     )
 
 
@@ -1557,6 +1715,7 @@ async def async_detect_and_connect_client(
     speed_max: int | None = None,
     temp_min: int | None = None,
     temp_max: int | None = None,
+    vav_zones: int | None = None,
 ) -> tuple[BreezartClientType, str, int]:
     """Connect and verify device properties, with automatic fallback between port 502 (Modbus) and 1560 (Native)."""
     if protocol in (PROTOCOL_MODBUS_TCP, PROTOCOL_NATIVE_TCP):
@@ -1591,6 +1750,7 @@ async def async_detect_and_connect_client(
             speed_max=speed_max,
             temp_min=temp_min,
             temp_max=temp_max,
+            vav_zones=vav_zones,
         )
         try:
             await cand_client.connect()

@@ -37,6 +37,8 @@ class FakeClient:
         self.speed_min, self.speed_max = 1, 10
         self.has_cooler = False
         self.has_humidifier = False
+        self.has_vav = False
+        self.vav_zones = 0
         self.firmware_ver = 100
         self.protocol_ver = "1.0"
         self.connected = False
@@ -66,12 +68,14 @@ class FakeClient:
             "schedule_active": False,
             "scenario_source": "off",
             "controller_time": None,
+            "vav_mode": False,
         }
         self.sensors: dict[str, Any] = {"temp_supply": 20.5, "temp_room": 22.5}
         self.set_power = AsyncMock()
         self.set_temperature = AsyncMock()
         self.set_humidity = AsyncMock()
         self.set_fan_speed = AsyncMock()
+        self.set_vav_zone_speed = AsyncMock()
         self.set_mode = AsyncMock()
 
     @property

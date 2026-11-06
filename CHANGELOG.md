@@ -2,6 +2,15 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.4.0]
+
+### Added
+- **VAV Zoning Support (`custom_components/breezart/coordinator.py`, `custom_components/breezart/number.py`, `custom_components/breezart/binary_sensor.py`, `custom_components/breezart/config_flow.py`, `tests/`)**:
+  - Added `decode_vav_properties()` and `decode_vav_zones_response()` to decode hardware VAV capability (`IsVAV` bit 15 and `MaxNVAV` bits 8..12 in `VPr07`), active VAV mode (`VSt07` `BitMode` bit 13 / Modbus `INPUT[11]` bit 9), and per-zone airflow speeds (`VZLst` on Native TCP and `HOLDING[100..119]` on Modbus TCP).
+  - Added `set_vav_zone_speed(zone, speed)` on both `BreezartTCPClient` (`VWZSp_<pass>_<((speed<<8)|zone)_hex>`) and `BreezartModbusClient` (`HOLDING[100 + zone - 1] = % × 100`).
+  - Added dynamic per-zone number entities `BreezartVavZoneSpeed` (`number.breezart_vav_zone_1`..`number.breezart_vav_zone_20`, range `0..speed_max`) created automatically when VAV zoning is detected or configured (`vav_zones` in `OptionsFlow`).
+  - Added diagnostic binary sensor `BreezartVavBinarySensor` (`binary_sensor.breezart_vav_mode`) with `has_vav`, `vav_zones`, and `zone_speeds` attributes.
+
 ## [1.3.0]
 
 ### Added

@@ -52,6 +52,7 @@ async def async_get_config_entry_diagnostics(
                 "has_cooler": getattr(client, "has_cooler", None),
                 "has_humidifier": getattr(client, "has_humidifier", None),
                 "has_vav": getattr(client, "has_vav", None),
+                "vav_zones": getattr(client, "vav_zones", 0),
                 "unsupported_modbus_blocks": sorted(
                     getattr(client, "_unsupported_blocks", set())
                 ),

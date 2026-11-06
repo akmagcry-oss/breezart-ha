@@ -13,6 +13,7 @@ from .const import (
     CONF_SPEED_MAX,
     CONF_TEMP_MAX,
     CONF_TEMP_MIN,
+    CONF_VAV_ZONES,
     DATA_CLIENT,
     DATA_COORDINATOR,
     DATA_MODEL,
@@ -64,10 +65,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     raw_speed_max = entry.options.get(CONF_SPEED_MAX, entry.data.get(CONF_SPEED_MAX))
     raw_temp_min = entry.options.get(CONF_TEMP_MIN, entry.data.get(CONF_TEMP_MIN))
     raw_temp_max = entry.options.get(CONF_TEMP_MAX, entry.data.get(CONF_TEMP_MAX))
+    raw_vav_zones = entry.options.get(CONF_VAV_ZONES, entry.data.get(CONF_VAV_ZONES))
 
     speed_max = int(raw_speed_max) if raw_speed_max is not None else None
     temp_min = int(raw_temp_min) if raw_temp_min is not None else None
     temp_max = int(raw_temp_max) if raw_temp_max is not None else None
+    vav_zones = int(raw_vav_zones) if raw_vav_zones is not None and int(raw_vav_zones) > 0 else None
 
     notify_service = str(
         entry.options.get(
@@ -87,6 +90,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     password = entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
 
+    kw_args = {}
+    if vav_zones is not None:
+        kw_args["vav_zones"] = vav_zones
+
     client = create_breezart_client(
         host=entry.data[CONF_HOST],
         port=port,
@@ -97,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         speed_max=speed_max,
         temp_min=temp_min,
         temp_max=temp_max,
+        **kw_args,
     )
     coordinator = BreezartDataCoordinator(
         hass,

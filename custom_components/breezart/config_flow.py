@@ -26,6 +26,7 @@ from .const import (
     CONF_SPEED_MAX,
     CONF_TEMP_MAX,
     CONF_TEMP_MIN,
+    CONF_VAV_ZONES,
     CONFIG_FLOW_VERSION,
     DATA_COORDINATOR,
     DEFAULT_HOST,
@@ -40,6 +41,7 @@ from .const import (
     DEFAULT_SPEED_MAX,
     DEFAULT_TEMP_MAX,
     DEFAULT_TEMP_MIN,
+    DEFAULT_VAV_ZONES,
     DISCOVERY_MANUAL,
     DOMAIN,
     ERR_CANNOT_CONNECT,
@@ -47,8 +49,10 @@ from .const import (
     ERR_UNKNOWN,
     MAX_ALLOWED_SPEED_MAX,
     MAX_ALLOWED_TEMP_BOUND,
+    MAX_ALLOWED_VAV_ZONES,
     MIN_ALLOWED_SPEED_MAX,
     MIN_ALLOWED_TEMP_BOUND,
+    MIN_ALLOWED_VAV_ZONES,
     MODEL_CUSTOM,
     MODEL_OPTIONS,
     NOTIFICATION_SETTING_KEYS,
@@ -319,11 +323,19 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
                 MIN_ALLOWED_SPEED_MAX,
                 min(MAX_ALLOWED_SPEED_MAX, int(user_input.get(CONF_SPEED_MAX, DEFAULT_SPEED_MAX))),
             )
+            vav_z = max(
+                MIN_ALLOWED_VAV_ZONES,
+                min(
+                    MAX_ALLOWED_VAV_ZONES,
+                    int(user_input.get(CONF_VAV_ZONES, current.get(CONF_VAV_ZONES, DEFAULT_VAV_ZONES))),
+                ),
+            )
             cleaned: dict[str, Any] = {
                 **user_input,
                 CONF_SPEED_MAX: s_max,
                 CONF_TEMP_MIN: t_min,
                 CONF_TEMP_MAX: t_max,
+                CONF_VAV_ZONES: vav_z,
             }
 
             protocol = cleaned.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
@@ -423,6 +435,13 @@ class BreezartOptionsFlowHandler(config_entries.OptionsFlow):
             ): vol.All(
                 vol.Coerce(int),
                 vol.Range(min=MIN_ALLOWED_TEMP_BOUND + 1, max=MAX_ALLOWED_TEMP_BOUND),
+            ),
+            vol.Optional(
+                CONF_VAV_ZONES,
+                default=int(current.get(CONF_VAV_ZONES, DEFAULT_VAV_ZONES)),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=MIN_ALLOWED_VAV_ZONES, max=MAX_ALLOWED_VAV_ZONES),
             ),
             vol.Optional(
                 CONF_NOTIFY_SERVICE,

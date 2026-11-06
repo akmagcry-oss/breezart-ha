@@ -16,6 +16,7 @@ CONF_SLAVE_ID: Final[str] = "slave_id"
 CONF_SPEED_MAX: Final[str] = "speed_max"
 CONF_TEMP_MIN: Final[str] = "temp_min"
 CONF_TEMP_MAX: Final[str] = "temp_max"
+CONF_VAV_ZONES: Final[str] = "vav_zones"
 CONF_NOTIFY_SERVICE: Final[str] = "notify_service"
 DATA_CLIENT: Final[str] = "client"
 DATA_COORDINATOR: Final[str] = "coordinator"
@@ -79,16 +80,19 @@ TEMP_DIVISOR: Final[float] = 10.0
 REQ_GET_PROPERTIES: Final[str] = "VPr07"
 REQ_GET_STATE: Final[str] = "VSt07"
 REQ_GET_SENSORS: Final[str] = "VSens"
+REQ_GET_VAV_ZONES: Final[str] = "VZLst"
 REQ_SET_POWER: Final[str] = "VWPwr"
 REQ_SET_TEMP: Final[str] = "VWTmp"
 REQ_SET_HUMIDITY: Final[str] = "VWHum"
 REQ_SET_FAN_SPEED: Final[str] = "VWSpd"
 REQ_SET_MODE: Final[str] = "VWFtr"
+REQ_SET_VAV_ZONE: Final[str] = "VWZSp"
 
 # Response types
 RESP_STATE: Final[str] = "VSt07"
 RESP_SENSORS: Final[str] = "VSens"
 RESP_PROPERTIES: Final[str] = "VPr07"
+RESP_VAV_ZONES_PREFIXES: Final[tuple[str, ...]] = ("VZLst", "VZVAV")
 RESP_OK: Final[str] = "OK"
 
 # Error prefixes from Breezart device
@@ -126,8 +130,11 @@ BIT_LOW_BYTE_START: Final[int] = 0
 BIT_LOW_BYTE_END: Final[int] = 7
 BIT_HIGH_BYTE_START: Final[int] = 8
 BIT_HIGH_BYTE_END: Final[int] = 15
+BIT_VAV_ZONES_START: Final[int] = 8
+BIT_VAV_ZONES_END: Final[int] = 12
 BIT_IS_HUMIDIFIER: Final[int] = 13
 BIT_IS_COOLER: Final[int] = 14
+BIT_IS_VAV: Final[int] = 15
 
 # Packet field indices and bit positions for VSt07 (Current State)
 VST07_IDX_STATE: Final[int] = 1
@@ -157,6 +164,7 @@ BIT_NUM_ACTIVE_SCEN_START: Final[int] = 6
 BIT_NUM_ACTIVE_SCEN_END: Final[int] = 9
 BIT_WHO_ACTIVATE_SCEN_START: Final[int] = 10
 BIT_WHO_ACTIVATE_SCEN_END: Final[int] = 12
+BIT_VAV_MODE: Final[int] = 13
 
 BIT_SPEED_CUR_START: Final[int] = 0
 BIT_SPEED_CUR_END: Final[int] = 3
@@ -228,6 +236,9 @@ KEY_SPEED_MIN: Final[str] = "speed_min"
 KEY_SPEED_MAX: Final[str] = "speed_max"
 KEY_HAS_COOLER: Final[str] = "has_cooler"
 KEY_HAS_HUMIDIFIER: Final[str] = "has_humidifier"
+KEY_HAS_VAV: Final[str] = "has_vav"
+KEY_VAV_MODE: Final[str] = "vav_mode"
+KEY_VAV_ZONES: Final[str] = "vav_zones"
 KEY_FIRMWARE_VER: Final[str] = "firmware_ver"
 KEY_PROTOCOL_VER: Final[str] = "protocol_ver"
 KEY_ACTIVE_SCENARIO: Final[str] = "active_scenario"
@@ -235,6 +246,15 @@ KEY_SCHEDULE_ENABLED: Final[str] = "schedule_enabled"
 KEY_SCHEDULE_ACTIVE: Final[str] = "schedule_active"
 KEY_SCENARIO_SOURCE: Final[str] = "scenario_source"
 KEY_CONTROLLER_TIME: Final[str] = "controller_time"
+
+ATTR_HAS_VAV: Final[str] = "has_vav"
+ATTR_VAV_ZONES: Final[str] = "vav_zones"
+ATTR_ZONE_SPEEDS: Final[str] = "zone_speeds"
+
+
+def vav_zone_key(zone: int) -> str:
+    """Return canonical entity/dictionary key for VAV zone N (1..20)."""
+    return f"vav_zone_{int(zone)}"
 
 # Entity unique_id & translation keys
 TRANSLATION_KEY_CLIMATE: Final[str] = "climate"
@@ -309,6 +329,9 @@ MIN_ALLOWED_TEMP_BOUND: Final[int] = 5
 MAX_ALLOWED_TEMP_BOUND: Final[int] = 45
 MIN_ALLOWED_SPEED_MAX: Final[int] = 1
 MAX_ALLOWED_SPEED_MAX: Final[int] = 10
+DEFAULT_VAV_ZONES: Final[int] = 0
+MIN_ALLOWED_VAV_ZONES: Final[int] = 0
+MAX_ALLOWED_VAV_ZONES: Final[int] = 20
 FREEZE_SUPPLY_TEMP_THRESHOLD: Final[float] = 5.0
 FREEZE_OUTDOOR_TEMP_THRESHOLD: Final[float] = 0.0
 
@@ -468,6 +491,7 @@ MODBUS_HR_MODE_HC: Final[int] = 7          # mode_hc (0=Vent/Summer, 1=Heat/Wint
 MODBUS_HR_SCENARIO: Final[int] = 8         # scen_num / active schedule preset (0=Off, 1..8=Scenario)
 MODBUS_HR_BLOCK_START: Final[int] = 0
 MODBUS_HR_BLOCK_COUNT: Final[int] = 9      # Reads HOLDING[0..8] in one request
+MODBUS_HR_VAV_BLOCK_START: Final[int] = 100  # HOLDING[100..119]: VAV zone 1..20 target airflow (% x 100)
 
 # JL204c7 Input Registers (FC 0x04)
 MODBUS_IR_STATUS_BLOCK_START: Final[int] = 10
@@ -523,6 +547,7 @@ MODBUS_STATUS_BIT_VENT: Final[int] = 5
 MODBUS_STATUS_BIT_SCENARIO: Final[int] = 6
 MODBUS_STATUS_BIT_HEATING: Final[int] = 7
 MODBUS_STATUS_BIT_COOLING: Final[int] = 8
+MODBUS_STATUS_BIT_VAV: Final[int] = 9
 MODBUS_STATUS_BIT_OVERHEAT_BLOW: Final[int] = 15
 
 # JL204c7 Alarms bit positions (INPUT[19] Errors & INPUT[21] Warnings)
@@ -801,6 +826,8 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_POWER: "Установка включена",
             KEY_ACTIVE_SCENARIO: "Активный сценарий (расписание)",
             KEY_SCHEDULE_ACTIVE: "Работа по расписанию / таймеру",
+            KEY_VAV_MODE: "Режим VAV-зонирования",
+            **{f"vav_zone_{z}": f"VAV Зона {z} (скорость)" for z in range(1, 21)},
             KEY_NOTIFY_OVERHEAT: "Уведомление: Угроза перегрева",
             KEY_NOTIFY_FREEZE: "Уведомление: Угроза обморожения",
             KEY_NOTIFY_FILTER: "Уведомление: Замена фильтра",
@@ -924,6 +951,8 @@ TRANSLATIONS: Final[dict[str, dict[str, dict[str, str]]]] = {
             KEY_POWER: "Unit running",
             KEY_ACTIVE_SCENARIO: "Active scenario (schedule)",
             KEY_SCHEDULE_ACTIVE: "Schedule / timer active",
+            KEY_VAV_MODE: "VAV zoning mode",
+            **{f"vav_zone_{z}": f"VAV Zone {z} (speed)" for z in range(1, 21)},
             KEY_NOTIFY_OVERHEAT: "Notification: Overheat hazard",
             KEY_NOTIFY_FREEZE: "Notification: Freeze hazard",
             KEY_NOTIFY_FILTER: "Notification: Filter replacement",

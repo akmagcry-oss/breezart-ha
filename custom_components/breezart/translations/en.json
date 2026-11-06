@@ -39,6 +39,7 @@
           "speed_max": "Number of Fan Speeds (1–10)",
           "temp_min": "Minimum Heating Temperature (°C)",
           "temp_max": "Maximum Heating Temperature (°C)",
+          "vav_zones": "Number of VAV Zones (0 = auto-detect / disabled, 2–20)",
           "notify_service": "Notification Service (e.g., notify.notify or notify.mobile_app_phone)",
           "notify_overheat": "Notify on overheat hazard",
           "notify_freeze": "Notify on freeze hazard",
@@ -118,6 +119,66 @@
       },
       "fan_speed": {
         "name": "Fan speed"
+      },
+      "vav_zone_1": {
+        "name": "VAV Zone 1 speed"
+      },
+      "vav_zone_2": {
+        "name": "VAV Zone 2 speed"
+      },
+      "vav_zone_3": {
+        "name": "VAV Zone 3 speed"
+      },
+      "vav_zone_4": {
+        "name": "VAV Zone 4 speed"
+      },
+      "vav_zone_5": {
+        "name": "VAV Zone 5 speed"
+      },
+      "vav_zone_6": {
+        "name": "VAV Zone 6 speed"
+      },
+      "vav_zone_7": {
+        "name": "VAV Zone 7 speed"
+      },
+      "vav_zone_8": {
+        "name": "VAV Zone 8 speed"
+      },
+      "vav_zone_9": {
+        "name": "VAV Zone 9 speed"
+      },
+      "vav_zone_10": {
+        "name": "VAV Zone 10 speed"
+      },
+      "vav_zone_11": {
+        "name": "VAV Zone 11 speed"
+      },
+      "vav_zone_12": {
+        "name": "VAV Zone 12 speed"
+      },
+      "vav_zone_13": {
+        "name": "VAV Zone 13 speed"
+      },
+      "vav_zone_14": {
+        "name": "VAV Zone 14 speed"
+      },
+      "vav_zone_15": {
+        "name": "VAV Zone 15 speed"
+      },
+      "vav_zone_16": {
+        "name": "VAV Zone 16 speed"
+      },
+      "vav_zone_17": {
+        "name": "VAV Zone 17 speed"
+      },
+      "vav_zone_18": {
+        "name": "VAV Zone 18 speed"
+      },
+      "vav_zone_19": {
+        "name": "VAV Zone 19 speed"
+      },
+      "vav_zone_20": {
+        "name": "VAV Zone 20 speed"
       }
     },
     "binary_sensor": {
@@ -141,6 +202,20 @@
       },
       "schedule_active": {
         "name": "Timer / schedule active"
+      },
+      "vav_mode": {
+        "name": "VAV mode active",
+        "state_attributes": {
+          "has_vav": {
+            "name": "VAV supported"
+          },
+          "vav_zones": {
+            "name": "VAV zones count"
+          },
+          "zone_speeds": {
+            "name": "Zone speeds"
+          }
+        }
       }
     },
     "sensor": {

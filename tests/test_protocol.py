@@ -468,3 +468,82 @@ async def test_target_humidity_protocol_commands_and_decoding(serve) -> None:
     assert modbus_writes == [(2, 550)]
 
 
+async def test_vav_protocol_detection_reading_and_writing(serve) -> None:
+    """Native TCP VPr07/VSt07/VZLst/VWZSp and Modbus HOLDING[100..] support VAV zoning."""
+    from custom_components.breezart.const import KEY_VAV_MODE, KEY_VAV_ZONES, vav_zone_key
+    from custom_components.breezart.coordinator import (
+        decode_vav_properties,
+        decode_vav_zones_response,
+    )
+
+    # 1. Pure decoders
+    misc_word = (1 << 15) | (4 << 8)  # IsVAV=1, MaxNVAV=4 zones
+    has_vav, zones = decode_vav_properties(format(misc_word, "x"))
+    assert has_vav is True
+    assert zones == 4
+    assert decode_vav_zones_response(["VZLst", "3", "5", "0", "8"], 4) == {
+        1: 3,
+        2: 5,
+        3: 0,
+        4: 8,
+    }
+
+    # 2. Native TCP VAV client
+    received_native: list[str] = []
+
+    async def native_vav_handler(reader, writer):
+        while req := await reader.read(100):
+            text = req.decode().strip()
+            received_native.append(text)
+            if text.startswith("VPr07"):
+                # parts[4] = 0x8400 -> bit 15 (IsVAV=1) | (4 << 8) (4 zones)
+                writer.write(b"VPr07_2305_a01_551e_8400_107_0_64")
+            elif text.startswith("VSt07"):
+                # parts[2] = 0x2001 -> bit 13 (VAV mode active) | unit_state=1
+                writer.write(b"VSt07_41_2001_1615_372a_33_80_e23_0_0_OK")
+            elif text.startswith("VZLst"):
+                writer.write(b"VZLst_3_5_0_8")
+            elif text.startswith("VWZSp"):
+                writer.write(b"OK")
+            await writer.drain()
+
+    nat_client = BreezartTCPClient("127.0.0.1", await serve(native_vav_handler), timeout=1)
+    await nat_client.connect()
+    await nat_client.get_properties()
+    assert nat_client.has_vav is True
+    assert nat_client.vav_zones == 4
+
+    nat_state = await nat_client.get_state()
+    assert nat_state[KEY_VAV_MODE] is True
+
+    await nat_client.set_vav_zone_speed(2, 7)
+    await nat_client.disconnect()
+    # (7 << 8) | 2 = 0x0702 -> "702"
+    assert any(cmd.startswith("VWZSp_") and cmd.endswith("_702") for cmd in received_native)
+
+    # 3. Modbus TCP VAV zone write (zone 3, speed 5 of 10 -> HOLDING[102] = 5000)
+    modbus_writes: list[tuple[int, int]] = []
+
+    async def mb_vav_handler(reader, writer):
+        while hdr := await reader.read(260):
+            tx_id, proto_id, length, unit_id, fc = struct.unpack(">HHHBB", hdr[:8])
+            if fc == 0x06:
+                reg, val = struct.unpack(">HH", hdr[8:12])
+                modbus_writes.append((reg, val))
+                writer.write(hdr[:12])
+                await writer.drain()
+
+    mb_client = BreezartModbusClient(
+        "127.0.0.1", await serve(mb_vav_handler), timeout=1, vav_zones=4
+    )
+    await mb_client.connect()
+    assert mb_client.has_vav is True
+    assert mb_client.vav_zones == 4
+    await mb_client.set_vav_zone_speed(3, 5)
+    await mb_client.disconnect()
+    assert modbus_writes == [(102, 5000)]
+    assert vav_zone_key(3) == "vav_zone_3"
+    assert KEY_VAV_ZONES == "vav_zones"
+
+
+
