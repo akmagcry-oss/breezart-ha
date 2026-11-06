@@ -16,7 +16,7 @@ custom_components/breezart/
 ├── const.py              # Все константы протоколов, карта регистров JL204c7, пресеты и словари RU/EN
 ├── blueprints/           # Встроенные шаблоны автоматизаций Home Assistant (CO₂ Boost, Ночной, Эко, Окно)
 ├── brand/icon.png        # Иконка интеграции для Home Assistant и HACS
-├── manifest.json         # Метаданные HACS (v1.4.0)
+├── manifest.json         # Метаданные HACS (v1.4.1)
 ├── strings.json          # Базовые строки локализации
 └── translations/         # Переводы интерфейса и сущностей (ru.json, en.json)
 ```

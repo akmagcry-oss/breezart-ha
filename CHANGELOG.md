@@ -2,6 +2,25 @@
 
 All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha) are documented in this file.
 
+## [1.4.1]
+
+### Changed
+- **Minimum Home Assistant Version Raised to 2024.12.0 (`hacs.json`, `README.md`)**:
+  - The options flow relies on Home Assistant setting `OptionsFlow.config_entry` automatically, which started in 2024.12. On 2024.11 and older, opening "Configure" failed with `AttributeError`, so the previously declared minimum (`2023.1.0`) was not actually supported.
+
+### Fixed
+- **Host Migration Uses the Per-Entry Device Lookup (`custom_components/breezart/config_flow.py`)**:
+  - Reconfiguring the host no longer calls `device_registry.async_get_device(identifiers=...)`, which Home Assistant 2026.x deprecates (it stops working in 2027.8). Devices are now looked up through `dr.async_entries_for_config_entry()`, which works on every supported version and only touches this entry's devices.
+
+### CI
+- **Tests Run on Both the Latest and the Minimum Home Assistant (`.github/workflows/validate.yml`, `requirements_test.txt`, `tests/requirements_min.txt`)**:
+  - The unpinned test dependency on Python 3.12 had silently resolved to Home Assistant 2025.1.4. CI now runs the suite on the latest release (Python 3.14, `pytest-homeassistant-custom-component==0.13.375` / HA 2026.10.4) and on the declared minimum (Python 3.12, HA 2024.12.0), and fails if `hacs.json` and the minimum test pin drift apart.
+- **Ruff Lint Job (`pyproject.toml`, `requirements_lint.txt`)**: `F`, `E9`, `I`, `UP` and `B` rules; removed 4 unused imports and sorted imports.
+- **Version Check Without Hard-Coded Versions (`tests/test_init.py`)**: The metadata test now checks that `manifest.json`, the newest `CHANGELOG.md` entry and `docs/structure.md` agree, instead of asserting a literal version that had to be edited on every release.
+- **Pinned Actions, Dependabot, Weekly Run and Concurrency (`.github/workflows/validate.yml`, `.github/dependabot.yml`)**: Actions are pinned to commit SHAs and kept current by Dependabot; a weekly scheduled run catches breakage from new Home Assistant, hassfest or HACS releases; a new push to a PR cancels its outdated run.
+- **Release Workflow (`.github/workflows/release.yml`)**: Pushing a `v*` tag checks it against `manifest.json` and `CHANGELOG.md` and creates the GitHub release with that version's changelog section as notes (an existing release is left untouched).
+- **Test Fixes for Newer Home Assistant (`tests/test_config_flow.py`)**: `test_user_flow_creates_entry` now mocks local network discovery (the newer test harness fails tests that open sockets).
+
 ## [1.4.0]
 
 ### Added
