@@ -1,0 +1,7 @@
+# Oldest supported Home Assistant; keep in sync with "homeassistant" in hacs.json.
+# Lives in tests/ so Dependabot (which scans the repo root) leaves these pins alone.
+# 0.13.190 pins homeassistant==2024.12.0 (Python 3.12). 2024.12 is the first
+# release that sets OptionsFlow.config_entry automatically.
+pytest-homeassistant-custom-component==0.13.190
+# josepy 2.x removed ComparableX509, which acme (via hass-nabucasa) needs here.
+josepy<2

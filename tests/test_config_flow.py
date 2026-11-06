@@ -27,6 +27,7 @@ from custom_components.breezart.const import (
 from .conftest import HOST, FakeClient
 
 DETECT = "custom_components.breezart.config_flow.async_detect_and_connect_client"
+DISCOVER = "custom_components.breezart.config_flow.async_discover_breezart_devices"
 
 
 def _options_input(**overrides) -> dict:
@@ -44,7 +45,8 @@ def _options_input(**overrides) -> dict:
 
 async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     """The user step stores the protocol and port that answered."""
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    with patch(DISCOVER, AsyncMock(return_value=[])):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert result["type"] is FlowResultType.FORM
 
     with patch(DETECT, AsyncMock(return_value=(FakeClient(), PROTOCOL_MODBUS_TCP, 502))), patch(
@@ -282,7 +284,10 @@ async def test_reconfigure_flow_updates_host_and_reloads(
     migrated_entry = ent_reg.async_get(climate_entity_id)
     assert migrated_entry is not None
     assert migrated_entry.unique_id == f"{DOMAIN}_192.168.1.200_climate"
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, "192.168.1.200")}) is not None
+    assert any(
+        (DOMAIN, "192.168.1.200") in dev.identifiers
+        for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+    )
     mock_reload.assert_called_once_with(entry.entry_id)
 
 

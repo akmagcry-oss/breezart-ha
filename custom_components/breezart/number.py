@@ -20,11 +20,11 @@ from .const import (
     KEY_HUMIDITY_TARGET,
     KEY_SPEED_TARGET,
     KEY_TEMPERATURE_TARGET,
+    KEY_VAV_ZONES,
+    MAX_ALLOWED_VAV_ZONES,
     TRANSLATION_KEY_FAN_SPEED,
     TRANSLATION_KEY_TARGET_HUMIDITY,
     TRANSLATION_KEY_TARGET_TEMP,
-    KEY_VAV_ZONES,
-    MAX_ALLOWED_VAV_ZONES,
     vav_zone_key,
 )
 from .coordinator import BreezartDataCoordinator

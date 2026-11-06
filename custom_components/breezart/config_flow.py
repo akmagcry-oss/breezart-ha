@@ -63,7 +63,6 @@ from .const import (
     NOTIFICATION_SETTING_KEYS,
     PROTOCOL_OPTIONS,
     STEP_INIT,
-    STEP_REAUTH,
     STEP_REAUTH_CONFIRM,
     STEP_RECONFIGURE,
     STEP_USER,
@@ -346,6 +345,7 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entity_registry as er,
             issue_registry as ir,
         )
+
         from .const import REPAIR_ISSUE_KEYS
 
         old_prefix = f"{DOMAIN}_{old_host}_"
@@ -357,9 +357,16 @@ class BreezartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if ent_reg.async_get_entity_id(ent.domain, ent.platform, new_uid) is None:
                     ent_reg.async_update_entity(ent.entity_id, new_unique_id=new_uid)
 
+        # Look up devices through the entry instead of async_get_device(identifiers=...):
+        # identifiers are only unique per config entry, and HA 2026.x deprecates the
+        # global lookup (removal in 2027.8).
         dev_reg = dr.async_get(self.hass)
-        old_device = dev_reg.async_get_device(identifiers={(DOMAIN, old_host)})
-        if old_device is not None and dev_reg.async_get_device(identifiers={(DOMAIN, new_host)}) is None:
+        entry_devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        old_device = next(
+            (dev for dev in entry_devices if (DOMAIN, old_host) in dev.identifiers), None
+        )
+        new_taken = any((DOMAIN, new_host) in dev.identifiers for dev in entry_devices)
+        if old_device is not None and not new_taken:
             new_identifiers = {
                 (DOMAIN, new_host) if ident == (DOMAIN, old_host) else ident
                 for ident in old_device.identifiers

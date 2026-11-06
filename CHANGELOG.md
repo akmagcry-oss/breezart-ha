@@ -4,18 +4,27 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 
 ## [1.4.1]
 
+### Changed
+- **Minimum Home Assistant Version Raised to 2024.12.0 (`hacs.json`, `README.md`)**:
+  - The options flow relies on Home Assistant setting `OptionsFlow.config_entry` automatically, which started in 2024.12. On 2024.11 and older, opening "Configure" failed with `AttributeError`, so the previously declared minimum (`2023.1.0`) was not actually supported.
+
 ### Fixed
-- **CI Python 3.13 & Pinned Test Dependencies (`.github/workflows/validate.yml`, `requirements_test.txt`, `.github/dependabot.yml`, `hacs.json`, `README.md`)**:
-  - Updated `.github/workflows/validate.yml` to run on Python `3.13` and pinned `pytest-homeassistant-custom-component==0.13.316` (Home Assistant `2026.2.3`) in `requirements_test.txt`.
-  - Added `.github/dependabot.yml` for automated weekly dependency update PRs.
-  - Raised minimum `homeassistant` version in `hacs.json` and `README.md` from `2023.1.0` to `2024.11.0` (matching `OptionsFlow.config_entry` support).
-- **Dynamic Version Check in Metadata Test (`tests/test_init.py`)**:
-  - Removed hard-coded `"1.4.0"` version string from `test_hassfest_and_hacs_metadata_and_ci_workflow()`; the test now dynamically validates `manifest.json` semver against the top `CHANGELOG.md` release heading, `hacs.json` minimum version, and `requirements_test.txt` pin.
 - **Protocol Security, Boundary Validation & Reconfigure Registry Migration (`custom_components/breezart/coordinator.py`, `custom_components/breezart/config_flow.py`, `tests/`)**:
   - Restricted `PermissionError` in `BreezartTCPClient._check_error()` strictly to `VEPas` (`ERR_PREFIX_WRONG_PASS`), raising `ValueError` for non-auth protocol errors (`VEFrm`, `VECd1`, `VECd2`, `VEDat`) so command/format errors do not falsely trigger `ConfigEntryAuthFailed` (Reauth Flow).
   - Masked hex-encoded remote access passwords (`_mask_request()`) in `BreezartTCPClient` debug logs and `TimeoutError` messages.
   - Added packet length validation on `VPr07` and `VSt07` replies, MBAP protocol ID (`0`) and length (`2..260`) validation in `BreezartModbusClient._transact()`, and automatic socket reconnection after optional Modbus VAV block timeouts.
   - Added `_migrate_host_references()` in `BreezartConfigFlow.async_step_reconfigure` to migrate entity `unique_id`s, device identifiers, and Repairs issues when the controller IP/host is changed.
+- **Host Migration Uses the Per-Entry Device Lookup (`custom_components/breezart/config_flow.py`)**:
+  - Reconfiguring the host no longer calls `device_registry.async_get_device(identifiers=...)`, which Home Assistant 2026.x deprecates (it stops working in 2027.8). Devices are now looked up through `dr.async_entries_for_config_entry()`, which works on every supported version and only touches this entry's devices.
+
+### CI
+- **Tests Run on Both the Latest and the Minimum Home Assistant (`.github/workflows/validate.yml`, `requirements_test.txt`, `tests/requirements_min.txt`)**:
+  - The unpinned test dependency on Python 3.12 had silently resolved to Home Assistant 2025.1.4. CI now runs the suite on the latest release (Python 3.14, `pytest-homeassistant-custom-component==0.13.375` / HA 2026.10.4) and on the declared minimum (Python 3.12, HA 2024.12.0), and fails if `hacs.json` and the minimum test pin drift apart.
+- **Ruff Lint Job (`pyproject.toml`, `requirements_lint.txt`)**: `F`, `E9`, `I`, `UP` and `B` rules; removed 4 unused imports and sorted imports.
+- **Version Check Without Hard-Coded Versions (`tests/test_init.py`)**: The metadata test no longer asserts a literal `"1.4.0"`; it checks that both test requirement files pin the test package exactly, that `hacs.json` declares at least 2024.12.0, and that `manifest.json`, the newest `CHANGELOG.md` entry and `docs/structure.md` agree, instead of asserting a literal version that had to be edited on every release.
+- **Pinned Actions, Dependabot, Weekly Run and Concurrency (`.github/workflows/validate.yml`, `.github/dependabot.yml`)**: Actions are pinned to commit SHAs; Dependabot opens weekly update PRs for actions and the latest-HA/lint pins; a weekly scheduled run catches breakage from new Home Assistant, hassfest or HACS releases; a new push to a PR cancels its outdated run.
+- **Release Workflow (`.github/workflows/release.yml`)**: Pushing a `v*` tag checks it against `manifest.json` and `CHANGELOG.md` and creates the GitHub release with that version's changelog section as notes (an existing release is left untouched).
+- **Test Fixes for Newer Home Assistant (`tests/test_config_flow.py`)**: `test_user_flow_creates_entry` now mocks local network discovery (the newer test harness fails tests that open sockets).
 
 ## [1.4.0]
 

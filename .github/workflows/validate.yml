@@ -7,52 +7,105 @@ on:
       - master
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly, so a new Home Assistant / hassfest / HACS release that breaks
+    # the integration shows up even when nobody pushes.
+    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  pytest:
-    name: Pytest Suite
+  lint:
+    name: Ruff
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: "pip"
-          cache-dependency-path: "requirements_test.txt"
+          cache-dependency-path: "requirements_lint.txt"
+
+      - name: Install ruff
+        run: pip install -r requirements_lint.txt
+
+      - name: Run ruff
+        run: ruff check --output-format=github .
+
+  pytest:
+    name: Pytest (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: latest HA
+            python: "3.14"
+            requirements: requirements_test.txt
+          - name: minimum HA
+            python: "3.12"
+            requirements: tests/requirements_min.txt
+            check_minimum: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: "pip"
+          cache-dependency-path: ${{ matrix.requirements }}
 
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements_test.txt
+          pip install -r ${{ matrix.requirements }}
+
+      - name: Check minimum HA matches hacs.json
+        if: matrix.check_minimum
+        run: |
+          python - <<'EOF'
+          import json
+          from homeassistant.const import __version__ as installed
+          declared = json.load(open("hacs.json"))["homeassistant"]
+          print(f"hacs.json declares {declared}, tests run on {installed}")
+          assert installed == declared, "update hacs.json or tests/requirements_min.txt"
+          EOF
 
       - name: Run pytest
-        run: pytest -v
+        run: pytest -v -p no:sugar
 
   hassfest:
     name: Hassfest Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Hassfest
-        uses: home-assistant/actions/hassfest@master
+        # Pinned to a commit: the repo's only tag (1.0.0) dates from 2020.
+        # The action always runs the latest hassfest image.
+        uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master 2026-10-26
 
   hacs:
     name: HACS Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run HACS validation
-        uses: hacs/action@main
+        # Pinned to a commit: the latest tag (22.5.0) dates from 2022.
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main 2026-06-08
         with:
           category: integration
           ignore: brands topics

@@ -148,6 +148,7 @@ async def test_repairs_issues_created_and_cleared_on_poll(
         KEY_DANGER_OVERHEAT,
         KEY_FILTER_DUST,
     )
+
     from .conftest import HOST
 
     entry = setup_integration

@@ -1,13 +1,15 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
+  # Bumps the action SHAs in .github/workflows.
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "weekly"
+      interval: weekly
     open-pull-requests-limit: 5
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  # Bumps requirements_test.txt (latest HA) and requirements_lint.txt.
+  # tests/requirements_min.txt is outside this directory and stays pinned.
+  - package-ecosystem: pip
+    directory: /
     schedule:
-      interval: "weekly"
+      interval: weekly
     open-pull-requests-limit: 5
