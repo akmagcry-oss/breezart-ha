@@ -13,6 +13,12 @@ All notable changes to [breezart-ha](https://github.com/akmagcry-oss/breezart-ha
 - **Calculated Airflow (`m³/h`) & Heater Thermal Power / Efficiency Sensors (`custom_components/breezart/coordinator.py`, `custom_components/breezart/sensor.py`, `custom_components/breezart/const.py`, `tests/test_entities.py`)**:
   - Added pure function `calculate_airflow_and_thermal_metrics()` and `ThermalAirflowMetrics` to compute real-time volumetric airflow (`m³/h`), sensible heater thermal power ($P_{\text{thermal}} = 0.336 \cdot L \cdot \max(0, T_{\text{supply}} - T_{\text{outdoor}})$ in `W`), and heater efficiency (`%`, electrical-to-thermal ratio $P_{\text{thermal}} / P_{\text{electric}}$ when power consumption is available, or temperature-lift efficiency $(T_{\text{supply}} - T_{\text{outdoor}}) / (T_{\text{target}} - T_{\text{outdoor}})$ for water heaters).
   - Added `BreezartAirflowSensor` (`sensor.breezart_airflow`, `m³/h`, attribute `nominal_airflow_m3h`), `BreezartHeaterPowerSensor` (`sensor.breezart_heater_thermal_power`, `SensorDeviceClass.POWER`, `W`, attribute `temp_delta_c`), and `sensor.breezart_heater_efficiency` (`%`).
+- **Ready-to-Use Home Assistant Automation Blueprints (`blueprints/automation/breezart/`, `custom_components/breezart/blueprints/automation/breezart/`, `custom_components/breezart/__init__.py`, `tests/test_init.py`)**:
+  - Added 4 ready-made automation blueprints automatically installed into `<config>/blueprints/automation/breezart/` on integration setup (`install_blueprints()` / `async_install_blueprints()`) and available for 1-click import from GitHub:
+    1. `breezart_co2_boost.yaml` — Automatic CO₂ boost ventilation with hysteresis (`co2_high_threshold` / `co2_normal_threshold`).
+    2. `breezart_night_quiet_mode.yaml` — Scheduled night quiet fan speed & sleep temperature with morning restore.
+    3. `breezart_away_eco_mode.yaml` — Presence-based Away / Eco mode (`zone.home` / `person.*`) with optional unit shutdown or minimum speed & setback temperature.
+    4. `breezart_window_open_pause.yaml` — Window contact sensor pause or speed reduction while a window is open.
 
 ## [1.3.0]
 

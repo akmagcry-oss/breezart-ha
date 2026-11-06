@@ -1,6 +1,10 @@
 """Custom integration for Breezart ventilation systems (Native TCP 1560 & Modbus TCP 502)."""
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+from typing import Any
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
@@ -30,6 +34,8 @@ from .const import (
 )
 from .coordinator import BreezartDataCoordinator, create_breezart_client, resolve_port
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
     Platform.SENSOR,
@@ -37,6 +43,110 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.SWITCH,
 ]
+
+BLUEPRINT_FILENAMES: tuple[str, ...] = (
+    "breezart_co2_boost.yaml",
+    "breezart_night_quiet_mode.yaml",
+    "breezart_away_eco_mode.yaml",
+    "breezart_window_open_pause.yaml",
+)
+
+
+def parse_blueprint_metadata(raw_yaml: str) -> dict[str, Any]:
+    """Extract and validate structural metadata from a Home Assistant blueprint YAML string."""
+    name = ""
+    description = ""
+    domain = ""
+    mode = "single"
+    has_trigger = False
+    has_action = False
+    inputs: list[str] = []
+    in_blueprint = False
+    in_input = False
+    in_description = False
+
+    for line in raw_yaml.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+
+        if indent == 0:
+            in_blueprint = stripped == "blueprint:"
+            in_input = False
+            in_description = False
+            if stripped.startswith(("trigger:", "triggers:")):
+                has_trigger = True
+            elif stripped.startswith(("action:", "actions:")):
+                has_action = True
+            elif stripped.startswith("mode:"):
+                mode = stripped.split(":", 1)[1].strip().strip("\"'")
+            continue
+
+        if in_blueprint:
+            if indent == 2:
+                in_input = stripped == "input:"
+                in_description = False
+                if stripped.startswith("name:"):
+                    name = stripped.split(":", 1)[1].strip().strip("\"'")
+                elif stripped.startswith("domain:"):
+                    domain = stripped.split(":", 1)[1].strip().strip("\"'")
+                elif stripped.startswith("description:"):
+                    val = stripped.split(":", 1)[1].strip()
+                    if val in {">", "|", ">-", "|-"}:
+                        in_description = True
+                    else:
+                        description = val.strip("\"'")
+            elif in_description and indent >= 4 and not description:
+                description = stripped
+            elif in_input and indent == 4 and stripped.endswith(":"):
+                inputs.append(stripped[:-1].strip())
+
+    return {
+        "name": name,
+        "description": description,
+        "domain": domain,
+        "mode": mode,
+        "inputs": inputs,
+        "has_trigger": has_trigger,
+        "has_action": has_action,
+    }
+
+
+def install_blueprints(
+    config_dir: Path, source_dir: Path | None = None
+) -> list[Path]:
+    """Idempotently copy bundled automation blueprints into `<config>/blueprints/automation/breezart/`."""
+    src_base = source_dir or (
+        Path(__file__).resolve().parent / "blueprints" / "automation" / DOMAIN
+    )
+    target_base = Path(config_dir) / "blueprints" / "automation" / DOMAIN
+    target_base.mkdir(parents=True, exist_ok=True)
+
+    installed: list[Path] = []
+    for filename in BLUEPRINT_FILENAMES:
+        src_file = src_base / filename
+        if not src_file.is_file():
+            continue
+        dst_file = target_base / filename
+        content = src_file.read_text(encoding="utf-8")
+        if not dst_file.is_file() or dst_file.read_text(encoding="utf-8") != content:
+            dst_file.write_text(content, encoding="utf-8")
+        installed.append(dst_file)
+    return installed
+
+
+async def async_install_blueprints(hass: HomeAssistant) -> None:
+    """Install bundled Breezart automation blueprints in the Home Assistant config directory."""
+    config = getattr(hass, "config", None)
+    path_fn = getattr(config, "path", None)
+    if not callable(path_fn) or not hasattr(hass, "async_add_executor_job"):
+        return
+    try:
+        config_dir = Path(path_fn())
+        await hass.async_add_executor_job(install_blueprints, config_dir)
+    except OSError as err:
+        _LOGGER.debug("Skipping blueprint auto-installation: %s", err)
 
 
 def _reload_snapshot(entry: ConfigEntry) -> dict:
@@ -51,6 +161,7 @@ def _reload_snapshot(entry: ConfigEntry) -> dict:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Breezart from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    await async_install_blueprints(hass)
     model_id = entry.options.get(
         CONF_MODEL, entry.data.get(CONF_MODEL, DEFAULT_MODEL)
     )

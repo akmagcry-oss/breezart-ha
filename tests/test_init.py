@@ -187,3 +187,83 @@ def test_hassfest_and_hacs_metadata_and_ci_workflow() -> None:
     license_path = root / "LICENSE"
     assert license_path.is_file(), "LICENSE must exist in repository root for HACS validation"
     assert "MIT License" in license_path.read_text(encoding="utf-8")
+
+
+def test_blueprints_valid_and_idempotent_install() -> None:
+    """Verify bundled Home Assistant automation blueprints and idempotent installer."""
+    from pathlib import Path
+    import tempfile
+
+    from custom_components.breezart import (
+        BLUEPRINT_FILENAMES,
+        install_blueprints,
+        parse_blueprint_metadata,
+    )
+
+    root = Path(__file__).resolve().parent.parent
+    component_bp_dir = root / "custom_components" / "breezart" / "blueprints" / "automation" / "breezart"
+    repo_bp_dir = root / "blueprints" / "automation" / "breezart"
+
+    expected_files = {
+        "breezart_co2_boost.yaml",
+        "breezart_night_quiet_mode.yaml",
+        "breezart_away_eco_mode.yaml",
+        "breezart_window_open_pause.yaml",
+    }
+    assert set(BLUEPRINT_FILENAMES) == expected_files
+
+    for filename in expected_files:
+        comp_file = component_bp_dir / filename
+        repo_file = repo_bp_dir / filename
+        assert comp_file.is_file(), f"Missing component blueprint: {comp_file}"
+        assert repo_file.is_file(), f"Missing repo blueprint: {repo_file}"
+
+        raw_comp = comp_file.read_text(encoding="utf-8")
+        raw_repo = repo_file.read_text(encoding="utf-8")
+        assert raw_comp == raw_repo, f"Blueprint {filename} differs between component and repo root"
+
+        meta = parse_blueprint_metadata(raw_comp)
+        assert meta["domain"] == "automation", f"Invalid domain in {filename}: {meta}"
+        assert meta["name"], f"Missing blueprint name in {filename}"
+        assert meta["description"], f"Missing blueprint description in {filename}"
+        assert len(meta["inputs"]) >= 2, f"Expected >=2 inputs in {filename}, got {meta['inputs']}"
+        assert meta["has_trigger"] is True, f"Missing trigger section in {filename}"
+        assert meta["has_action"] is True, f"Missing action section in {filename}"
+        assert meta["mode"] in {"single", "restart", "queued", "parallel"}
+
+        try:
+            import yaml
+
+            class _HALoader(yaml.SafeLoader):
+                pass
+
+            _HALoader.add_constructor(
+                "!input", lambda loader, node: f"!input {loader.construct_scalar(node)}"
+            )
+            parsed = yaml.load(raw_comp, Loader=_HALoader)
+            assert isinstance(parsed, dict)
+            assert parsed["blueprint"]["domain"] == "automation"
+        except ImportError:
+            pass
+
+    # Verify idempotent installation into a temporary Home Assistant config directory
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_config = Path(tmp)
+        installed_first = install_blueprints(tmp_config)
+        assert len(installed_first) == 4
+        target_dir = tmp_config / "blueprints" / "automation" / "breezart"
+        for filename in expected_files:
+            assert (target_dir / filename).is_file()
+            assert (target_dir / filename).read_text(encoding="utf-8") == (
+                component_bp_dir / filename
+            ).read_text(encoding="utf-8")
+
+        # Running a second time must be idempotent
+        installed_second = install_blueprints(tmp_config)
+        assert len(installed_second) == 4
+        for filename in expected_files:
+            assert (target_dir / filename).read_text(encoding="utf-8") == (
+                component_bp_dir / filename
+            ).read_text(encoding="utf-8")
+
+

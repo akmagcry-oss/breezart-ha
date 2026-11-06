@@ -1,0 +1,127 @@
+blueprint:
+  name: "Breezart: Ночной тихий режим вентиляции"
+  description: >
+    Автоматически снижает скорость вентилятора и заданную температуру подачи
+    установки Breezart на ночь для бесшумной работы и комфортного сна, а утром
+    восстанавливает дневные параметры.
+  domain: automation
+  source_url: https://github.com/akmagcry-oss/breezart-ha/blob/main/blueprints/automation/breezart/breezart_night_quiet_mode.yaml
+  input:
+    fan_speed_entity:
+      name: Скорость вентилятора Breezart
+      description: Числовой регулятор скорости вентилятора (number.breezart_fan_speed).
+      selector:
+        entity:
+          integration: breezart
+          domain: number
+    climate_entity:
+      name: Термостат Breezart
+      description: Климатическая сущность установки Breezart (climate.breezart).
+      selector:
+        entity:
+          integration: breezart
+          domain: climate
+    power_switch:
+      name: Выключатель питания Breezart
+      description: Выключатель питания установки (switch.breezart_power).
+      selector:
+        entity:
+          integration: breezart
+          domain: switch
+    night_start_time:
+      name: Время включения ночного режима
+      description: Время перехода на тихую ночную скорость.
+      default: "23:00:00"
+      selector:
+        time: {}
+    morning_end_time:
+      name: Время окончания ночного режима
+      description: Время возврата к дневной скорости вентиляции.
+      default: "07:30:00"
+      selector:
+        time: {}
+    night_speed:
+      name: Ночная скорость вентилятора
+      description: Тихая скорость вентилятора на ночь (1–10).
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    day_speed:
+      name: Дневная скорость вентилятора
+      description: Обычная дневная скорость вентилятора (1–10).
+      default: 4
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    night_temperature:
+      name: Ночная температура воздуха (°C)
+      description: Целевая температура подачи воздуха ночью.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 1
+          unit_of_measurement: "°C"
+    day_temperature:
+      name: Дневная температура воздуха (°C)
+      description: Целевая температура подачи воздуха днём.
+      default: 22
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 1
+          unit_of_measurement: "°C"
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time
+    at: !input night_start_time
+    id: night_start
+  - platform: time
+    at: !input morning_end_time
+    id: morning_end
+
+condition:
+  - condition: state
+    entity_id: !input power_switch
+    state: "on"
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: night_start
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input night_speed
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input night_temperature
+      - conditions:
+          - condition: trigger
+            id: morning_end
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input day_speed
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input day_temperature

@@ -1,0 +1,163 @@
+blueprint:
+  name: "Breezart: Эко-режим при отсутствии дома (Away / Eco)"
+  description: >
+    Переводит вентиляционную установку Breezart в экономичный режим (минимальная
+    скорость и сниженная температура обогрева либо полное выключение), когда все
+    жильцы покидают дом, и автоматически восстанавливает комфортный режим при
+    возвращении.
+  domain: automation
+  source_url: https://github.com/akmagcry-oss/breezart-ha/blob/main/blueprints/automation/breezart/breezart_away_eco_mode.yaml
+  input:
+    presence_entity:
+      name: Зона дома или индикатор присутствия
+      description: Зона (например, zone.home с числом людей) или бинарный сенсор/группа присутствия.
+      default: zone.home
+      selector:
+        entity:
+          domain:
+            - zone
+            - person
+            - group
+            - binary_sensor
+            - input_boolean
+    fan_speed_entity:
+      name: Скорость вентилятора Breezart
+      description: Числовой регулятор скорости вентилятора (number.breezart_fan_speed).
+      selector:
+        entity:
+          integration: breezart
+          domain: number
+    climate_entity:
+      name: Термостат Breezart
+      description: Климатическая сущность установки Breezart (climate.breezart).
+      selector:
+        entity:
+          integration: breezart
+          domain: climate
+    power_switch:
+      name: Выключатель питания Breezart
+      description: Выключатель питания установки (switch.breezart_power).
+      selector:
+        entity:
+          integration: breezart
+          domain: switch
+    away_delay_minutes:
+      name: Задержка перехода в режим «Нет дома» (мин)
+      description: Через сколько минут после ухода последнего человека включать эко-режим.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 5
+          unit_of_measurement: min
+    turn_off_when_away:
+      name: Полностью выключать установку в режиме «Нет дома»
+      description: Если выключено, установка остаётся работать на минимальной скорости и эко-температуре.
+      default: false
+      selector:
+        boolean: {}
+    away_speed:
+      name: Скорость вентилятора в режиме «Нет дома»
+      description: Экономичная скорость вентилятора во время отсутствия (1–10).
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    home_speed:
+      name: Скорость вентилятора при возвращении домой
+      description: Комфортная скорость вентилятора, когда кто-то дома (1–10).
+      default: 4
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    away_temperature:
+      name: Температура в режиме «Нет дома» (°C)
+      description: Сниженная температура обогрева во время отсутствия.
+      default: 18
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 1
+          unit_of_measurement: "°C"
+    home_temperature:
+      name: Комфортная температура дома (°C)
+      description: Целевая температура обогрева при возвращении домой.
+      default: 22
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 1
+          unit_of_measurement: "°C"
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input presence_entity
+    to:
+      - "0"
+      - "not_home"
+      - "off"
+    for:
+      minutes: !input away_delay_minutes
+    id: away_mode
+  - platform: state
+    entity_id: !input presence_entity
+    from:
+      - "0"
+      - "not_home"
+      - "off"
+    id: home_mode
+
+action:
+  - variables:
+      should_turn_off: !input turn_off_when_away
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: away_mode
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ should_turn_off }}"
+                sequence:
+                  - service: switch.turn_off
+                    target:
+                      entity_id: !input power_switch
+            default:
+              - service: number.set_value
+                target:
+                  entity_id: !input fan_speed_entity
+                data:
+                  value: !input away_speed
+              - service: climate.set_temperature
+                target:
+                  entity_id: !input climate_entity
+                data:
+                  temperature: !input away_temperature
+      - conditions:
+          - condition: trigger
+            id: home_mode
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input power_switch
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input home_speed
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input home_temperature

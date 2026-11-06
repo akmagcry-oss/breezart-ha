@@ -1,0 +1,117 @@
+blueprint:
+  name: "Breezart: Пауза или снижение скорости при открытии окна"
+  description: >
+    Автоматически снижает скорость вентилятора до минимума (или временно
+    выключает установку Breezart), если окно открыто дольше заданного времени,
+    и восстанавливает работу после закрытия окна для экономии электроэнергии
+    на подогрев уличного воздуха.
+  domain: automation
+  source_url: https://github.com/akmagcry-oss/breezart-ha/blob/main/blueprints/automation/breezart/breezart_window_open_pause.yaml
+  input:
+    window_sensor:
+      name: Датчик открытия окна
+      description: Бинарный датчик окна или двери балкона (binary_sensor).
+      selector:
+        entity:
+          domain: binary_sensor
+    fan_speed_entity:
+      name: Скорость вентилятора Breezart
+      description: Числовой регулятор скорости вентилятора (number.breezart_fan_speed).
+      selector:
+        entity:
+          integration: breezart
+          domain: number
+    power_switch:
+      name: Выключатель питания Breezart
+      description: Выключатель питания установки (switch.breezart_power).
+      selector:
+        entity:
+          integration: breezart
+          domain: switch
+    open_delay_seconds:
+      name: Задержка при открытии окна (сек)
+      description: Сколько секунд окно должно оставаться открытым перед срабатыванием автоматизации.
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 600
+          step: 10
+          unit_of_measurement: s
+    turn_off_on_open:
+      name: Выключать установку при открытом окне
+      description: Если выключено, установка не отключается полностью, а переходит на минимальную скорость.
+      default: false
+      selector:
+        boolean: {}
+    open_window_speed:
+      name: Скорость при открытом окне
+      description: Минимальная скорость вентилятора на время проветривания через окно (1–10).
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    restore_speed:
+      name: Скорость после закрытия окна
+      description: Скорость вентилятора, которая восстанавливается после закрытия окна (1–10).
+      default: 4
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input window_sensor
+    to: "on"
+    for:
+      seconds: !input open_delay_seconds
+    id: window_opened
+  - platform: state
+    entity_id: !input window_sensor
+    from: "on"
+    to: "off"
+    for:
+      seconds: 15
+    id: window_closed
+
+action:
+  - variables:
+      should_turn_off: !input turn_off_on_open
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: window_opened
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ should_turn_off }}"
+                sequence:
+                  - service: switch.turn_off
+                    target:
+                      entity_id: !input power_switch
+            default:
+              - service: number.set_value
+                target:
+                  entity_id: !input fan_speed_entity
+                data:
+                  value: !input open_window_speed
+      - conditions:
+          - condition: trigger
+            id: window_closed
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input power_switch
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input restore_speed

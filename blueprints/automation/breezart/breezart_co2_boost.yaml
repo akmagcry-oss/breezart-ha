@@ -1,0 +1,121 @@
+blueprint:
+  name: "Breezart: Автоматическое проветривание по датчику CO₂ (Boost)"
+  description: >
+    Автоматически повышает скорость вентилятора установки Breezart при превышении
+    порога концентрации углекислого газа (CO₂) в помещении и возвращает обычную
+    скорость после проветривания (с гистерезисом).
+  domain: automation
+  source_url: https://github.com/akmagcry-oss/breezart-ha/blob/main/blueprints/automation/breezart/breezart_co2_boost.yaml
+  input:
+    co2_sensor:
+      name: Датчик CO₂ (ppm)
+      description: Встроенный датчик CO₂ Breezart или любой внешний комнатный датчик углекислого газа.
+      selector:
+        entity:
+          domain: sensor
+          device_class: carbon_dioxide
+    fan_speed_entity:
+      name: Скорость вентилятора Breezart
+      description: Числовой регулятор скорости вентилятора установки Breezart (number.breezart_fan_speed).
+      selector:
+        entity:
+          integration: breezart
+          domain: number
+    power_switch:
+      name: Выключатель питания Breezart
+      description: Выключатель питания установки (switch.breezart_power) для проверки, что установка включена.
+      selector:
+        entity:
+          integration: breezart
+          domain: switch
+    co2_high_threshold:
+      name: Верхний порог CO₂ для включения Boost (ppm)
+      description: При превышении этого значения в течение заданного времени скорость вентилятора увеличится.
+      default: 800
+      selector:
+        number:
+          min: 500
+          max: 2000
+          step: 50
+          unit_of_measurement: ppm
+    co2_normal_threshold:
+      name: Нижний порог CO₂ для возврата обычной скорости (ppm)
+      description: Когда уровень CO₂ опустится ниже этого порога, восстановится обычная скорость.
+      default: 600
+      selector:
+        number:
+          min: 400
+          max: 1500
+          step: 50
+          unit_of_measurement: ppm
+    boost_speed:
+      name: Скорость вентилятора в режиме проветривания (Boost)
+      description: Целевая скорость при высоком уровне CO₂ (1–10).
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    normal_speed:
+      name: Обычная скорость вентилятора
+      description: Скорость вентилятора после снижения уровня CO₂ до нормы (1–10).
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+    sustained_minutes:
+      name: Задержка срабатывания (мин)
+      description: Сколько минут подряд уровень CO₂ должен держаться выше порога перед переключением скорости.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: min
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input co2_sensor
+    above: !input co2_high_threshold
+    for:
+      minutes: !input sustained_minutes
+    id: co2_high
+  - platform: numeric_state
+    entity_id: !input co2_sensor
+    below: !input co2_normal_threshold
+    for:
+      minutes: !input sustained_minutes
+    id: co2_normal
+
+condition:
+  - condition: state
+    entity_id: !input power_switch
+    state: "on"
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: co2_high
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input boost_speed
+      - conditions:
+          - condition: trigger
+            id: co2_normal
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input fan_speed_entity
+            data:
+              value: !input normal_speed

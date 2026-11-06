@@ -14,8 +14,9 @@ custom_components/breezart/
 ├── switch.py             # Выключатель питания + 7 переключателей уведомлений в настройках устройства
 ├── diagnostics.py        # Выгрузка диагностики устройства в 1 клик (со скрытием пароля и IP)
 ├── const.py              # Все константы протоколов, карта регистров JL204c7, пресеты и словари RU/EN
+├── blueprints/           # Встроенные шаблоны автоматизаций Home Assistant (CO₂ Boost, Ночной, Эко, Окно)
 ├── brand/icon.png        # Иконка интеграции для Home Assistant и HACS
-├── manifest.json         # Метаданные HACS (v1.3.0)
+├── manifest.json         # Метаданные HACS (v1.4.0)
 ├── strings.json          # Базовые строки локализации
 └── translations/         # Переводы интерфейса и сущностей (ru.json, en.json)
 ```
