@@ -94,7 +94,7 @@ jobs:
       - name: Run Hassfest
         # Pinned to a commit: the repo's only tag (1.0.0) dates from 2020.
         # The action always runs the latest hassfest image.
-        uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master 2026-10-26
+        uses: home-assistant/actions/hassfest@9e9565e68f5a70d874202871f4c4064d23814235 # master 2026-10-26
 
   hacs:
     name: HACS Validation
